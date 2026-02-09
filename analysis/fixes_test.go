@@ -20,6 +20,7 @@ import (
 // Issue #6: SQLUsageType constants must match ColumnUsageType in ir.go
 // =============================================================================
 
+// TestSQLUsageTypeConstants_MatchIR verifies SQLUsageType constants match their ColumnUsageType counterparts.
 func TestSQLUsageTypeConstants_MatchIR(t *testing.T) {
 	// Verify that every ColumnUsageType constant in ir.go has a matching
 	// SQLUsageType constant in analysis/types.go with the same string value.
@@ -50,11 +51,13 @@ func TestSQLUsageTypeConstants_MatchIR(t *testing.T) {
 	}
 }
 
+// TestSQLUsageType_UpsertConstants validates upsert_target and upsert_set constant values.
 func TestSQLUsageType_UpsertConstants(t *testing.T) {
 	assert.Equal(t, SQLUsageType("upsert_target"), SQLUsageTypeUpsertTarget)
 	assert.Equal(t, SQLUsageType("upsert_set"), SQLUsageTypeUpsertSet)
 }
 
+// TestSQLUsageType_MergeConstants validates merge_target, merge_source, merge_set, and merge_insert values.
 func TestSQLUsageType_MergeConstants(t *testing.T) {
 	assert.Equal(t, SQLUsageType("merge_target"), SQLUsageTypeMergeTarget)
 	assert.Equal(t, SQLUsageType("merge_source"), SQLUsageTypeMergeSource)
@@ -66,6 +69,7 @@ func TestSQLUsageType_MergeConstants(t *testing.T) {
 // Issue #8: First-table fallback only when len(pq.Tables) == 1
 // =============================================================================
 
+// TestWhereConditions_MultiTableNoFallback ensures unaliased columns are not mis-attributed in multi-table queries.
 func TestWhereConditions_MultiTableNoFallback(t *testing.T) {
 	// In a multi-table query where a column has no alias, the table should
 	// NOT default to the first table. It should be left empty.
@@ -94,6 +98,7 @@ func TestWhereConditions_MultiTableNoFallback(t *testing.T) {
 	// the important thing is it doesn't misattribute.
 }
 
+// TestWhereConditions_SingleTableFallback verifies single-table queries resolve unaliased columns.
 func TestWhereConditions_SingleTableFallback(t *testing.T) {
 	// In a single-table query, unaliased columns should still resolve to the only table.
 	query := "SELECT * FROM orders WHERE status = 'pending'"
@@ -110,6 +115,7 @@ func TestWhereConditions_SingleTableFallback(t *testing.T) {
 // Issue #9: Paren-aware comma splitting in normalizeReturning
 // =============================================================================
 
+// TestNormalizeReturning_FunctionWithCommas ensures function arguments are not split on internal commas.
 func TestNormalizeReturning_FunctionWithCommas(t *testing.T) {
 	// RETURNING func(a, b) should NOT be split into ["func(a", "b)"]
 	items := []string{"RETURNING func(a, b)"}
@@ -119,6 +125,7 @@ func TestNormalizeReturning_FunctionWithCommas(t *testing.T) {
 	assert.Equal(t, "func(a, b)", result[0])
 }
 
+// TestNormalizeReturning_FunctionAndColumns validates splitting on top-level commas only.
 func TestNormalizeReturning_FunctionAndColumns(t *testing.T) {
 	// RETURNING id, func(a, b), name should produce 3 items
 	items := []string{"RETURNING id, func(a, b), name"}
@@ -130,6 +137,7 @@ func TestNormalizeReturning_FunctionAndColumns(t *testing.T) {
 	assert.Equal(t, "name", result[2])
 }
 
+// TestNormalizeReturning_NestedParens checks correct handling of nested parentheses.
 func TestNormalizeReturning_NestedParens(t *testing.T) {
 	// RETURNING COALESCE(func(a, b), c), d
 	items := []string{"RETURNING COALESCE(func(a, b), c), d"}
@@ -140,6 +148,7 @@ func TestNormalizeReturning_NestedParens(t *testing.T) {
 	assert.Equal(t, "d", result[1])
 }
 
+// TestNormalizeReturning_SimpleColumns verifies basic comma-separated column splitting.
 func TestNormalizeReturning_SimpleColumns(t *testing.T) {
 	// Simple case: RETURNING id, name, email
 	items := []string{"RETURNING id, name, email"}
@@ -151,6 +160,7 @@ func TestNormalizeReturning_SimpleColumns(t *testing.T) {
 	assert.Equal(t, "email", result[2])
 }
 
+// TestNormalizeReturning_AlreadyStrippedPrefix checks handling when RETURNING prefix is already removed.
 func TestNormalizeReturning_AlreadyStrippedPrefix(t *testing.T) {
 	// Items without the RETURNING prefix (already stripped by parser)
 	items := []string{"id, status, created_at"}
@@ -162,6 +172,7 @@ func TestNormalizeReturning_AlreadyStrippedPrefix(t *testing.T) {
 	assert.Equal(t, "created_at", result[2])
 }
 
+// TestSplitCommasRespectingParens validates paren-aware comma splitting across various patterns.
 func TestSplitCommasRespectingParens(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -224,6 +235,7 @@ func TestSplitCommasRespectingParens(t *testing.T) {
 // should still work on uppercased conditions. We verify through an integration test.
 // =============================================================================
 
+// TestExtractRelationshipsFromCondition_OnPrefix verifies ON-prefixed join condition extraction.
 func TestExtractRelationshipsFromCondition_OnPrefix(t *testing.T) {
 	// Verify that ON-prefixed conditions are still handled correctly
 	// after removing the dead second TrimPrefix.
@@ -248,6 +260,7 @@ func TestExtractRelationshipsFromCondition_OnPrefix(t *testing.T) {
 	assert.Equal(t, "orders", rels[0].ChildTable)
 }
 
+// TestExtractRelationshipsFromCondition_LowercaseOn checks lowercase "on" prefix normalization.
 func TestExtractRelationshipsFromCondition_LowercaseOn(t *testing.T) {
 	// Verify lowercase "on " prefix is handled after ToUpper normalization.
 	schemaMap := map[string][]ColumnSchema{
@@ -273,6 +286,7 @@ func TestExtractRelationshipsFromCondition_LowercaseOn(t *testing.T) {
 // Issue #12: Redundant JSONB flag removal -- verify no behavioral regression
 // =============================================================================
 
+// TestWhereConditions_JSONBDirectOperator confirms JSONB containment operator sets IsJSONB flag.
 func TestWhereConditions_JSONBDirectOperator(t *testing.T) {
 	// Verify that JSONB containment operators still set IsJSONB correctly
 	// after removing the redundant flag assignment.

@@ -14,6 +14,7 @@ import (
 // EQUALITY OPERATORS: =, !=, <>
 // =============================================================================
 
+// TestExtractWhereConditions_Equality validates =, !=, and <> operators with various literal types.
 func TestExtractWhereConditions_Equality(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -101,6 +102,7 @@ func TestExtractWhereConditions_Equality(t *testing.T) {
 // COMPARISON OPERATORS: >, <, >=, <=
 // =============================================================================
 
+// TestExtractWhereConditions_Comparison verifies >, <, >=, and <= comparison operators.
 func TestExtractWhereConditions_Comparison(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -171,6 +173,7 @@ func TestExtractWhereConditions_Comparison(t *testing.T) {
 // RANGE OPERATORS: BETWEEN, NOT BETWEEN
 // =============================================================================
 
+// TestExtractWhereConditions_Between checks BETWEEN extraction with integers, decimals, and dates.
 func TestExtractWhereConditions_Between(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -219,6 +222,7 @@ func TestExtractWhereConditions_Between(t *testing.T) {
 	}
 }
 
+// TestExtractWhereConditions_NotBetween validates NOT BETWEEN operator extraction.
 func TestExtractWhereConditions_NotBetween(t *testing.T) {
 	query := "SELECT * FROM orders WHERE total NOT BETWEEN 0 AND 10"
 
@@ -242,6 +246,7 @@ func TestExtractWhereConditions_NotBetween(t *testing.T) {
 // SET OPERATORS: IN, NOT IN
 // =============================================================================
 
+// TestExtractWhereConditions_In verifies IN list value extraction with strings, integers, and single values.
 func TestExtractWhereConditions_In(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -286,6 +291,7 @@ func TestExtractWhereConditions_In(t *testing.T) {
 	}
 }
 
+// TestExtractWhereConditions_NotIn checks NOT IN operator extraction.
 func TestExtractWhereConditions_NotIn(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -327,6 +333,7 @@ func TestExtractWhereConditions_NotIn(t *testing.T) {
 // PATTERN OPERATORS: LIKE, NOT LIKE, ILIKE
 // =============================================================================
 
+// TestExtractWhereConditions_Like validates LIKE pattern extraction with various wildcard positions.
 func TestExtractWhereConditions_Like(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -379,6 +386,7 @@ func TestExtractWhereConditions_Like(t *testing.T) {
 	}
 }
 
+// TestExtractWhereConditions_NotLike verifies NOT LIKE operator and pattern extraction.
 func TestExtractWhereConditions_NotLike(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -414,6 +422,7 @@ func TestExtractWhereConditions_NotLike(t *testing.T) {
 	}
 }
 
+// TestExtractWhereConditions_ILike checks ILIKE and NOT ILIKE case-insensitive pattern operators.
 func TestExtractWhereConditions_ILike(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -456,6 +465,7 @@ func TestExtractWhereConditions_ILike(t *testing.T) {
 // NULL OPERATORS: IS NULL, IS NOT NULL
 // =============================================================================
 
+// TestExtractWhereConditions_IsNull validates IS NULL predicate extraction.
 func TestExtractWhereConditions_IsNull(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -491,6 +501,7 @@ func TestExtractWhereConditions_IsNull(t *testing.T) {
 	}
 }
 
+// TestExtractWhereConditions_IsNotNull verifies IS NOT NULL predicate extraction.
 func TestExtractWhereConditions_IsNotNull(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -527,6 +538,7 @@ func TestExtractWhereConditions_IsNotNull(t *testing.T) {
 // LOGICAL OPERATORS: AND, OR, NOT
 // =============================================================================
 
+// TestExtractWhereConditions_And validates AND-combined condition extraction.
 func TestExtractWhereConditions_And(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -566,6 +578,7 @@ func TestExtractWhereConditions_And(t *testing.T) {
 	}
 }
 
+// TestExtractWhereConditions_Or checks OR-combined condition extraction.
 func TestExtractWhereConditions_Or(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -601,6 +614,7 @@ func TestExtractWhereConditions_Or(t *testing.T) {
 	}
 }
 
+// TestExtractWhereConditions_Not verifies NOT LIKE, NOT IN, and NOT BETWEEN operators.
 func TestExtractWhereConditions_Not(t *testing.T) {
 	// NOT is typically used with other operators
 	tests := []struct {
@@ -646,6 +660,7 @@ func TestExtractWhereConditions_Not(t *testing.T) {
 // PARAMETERIZED QUERIES: $1, $2, ?
 // =============================================================================
 
+// TestExtractWhereConditions_Parameterized validates $N and ? parameter marker detection.
 func TestExtractWhereConditions_Parameterized(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -708,6 +723,7 @@ func TestExtractWhereConditions_Parameterized(t *testing.T) {
 // MULTI-TABLE / JOIN CONDITIONS
 // =============================================================================
 
+// TestExtractWhereConditions_Join validates WHERE extraction in multi-table JOIN queries.
 func TestExtractWhereConditions_Join(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -786,6 +802,7 @@ func TestExtractWhereConditions_Join(t *testing.T) {
 // COMPLEX / NESTED EXPRESSIONS
 // =============================================================================
 
+// TestExtractWhereConditions_ComplexNested checks deeply nested AND/OR groups and mixed operators.
 func TestExtractWhereConditions_ComplexNested(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -856,6 +873,7 @@ func TestExtractWhereConditions_ComplexNested(t *testing.T) {
 // EDGE CASES
 // =============================================================================
 
+// TestExtractWhereConditions_EdgeCases covers no WHERE, empty input, invalid SQL, and quoted identifiers.
 func TestExtractWhereConditions_EdgeCases(t *testing.T) {
 	t.Run("no WHERE clause", func(t *testing.T) {
 		query := "SELECT * FROM orders"
@@ -930,6 +948,7 @@ func TestExtractWhereConditions_EdgeCases(t *testing.T) {
 // HELPER FUNCTION TESTS
 // =============================================================================
 
+// TestNormalizeOperator validates operator normalization including <>, ~~, !~~, and case handling.
 func TestNormalizeOperator(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -968,6 +987,7 @@ func TestNormalizeOperator(t *testing.T) {
 	}
 }
 
+// TestResolveTableName verifies alias-to-table resolution through ExtractWhereConditions.
 func TestResolveTableName(t *testing.T) {
 	// Test through ExtractWhereConditions since resolveTableName is not exported
 	tests := []struct {
@@ -1003,6 +1023,7 @@ func TestResolveTableName(t *testing.T) {
 	}
 }
 
+// TestExtractInValues validates parsing of IN value lists with integers, strings, and edge cases.
 func TestExtractInValues(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1044,6 +1065,7 @@ func TestExtractInValues(t *testing.T) {
 	}
 }
 
+// TestExtractBetweenValues checks BETWEEN range value parsing with integers, strings, and decimals.
 func TestExtractBetweenValues(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1084,6 +1106,7 @@ func TestExtractBetweenValues(t *testing.T) {
 // OPERATOR NORMALIZATION (PostgreSQL specific operators)
 // =============================================================================
 
+// TestExtractWhereConditions_PostgresOperatorNormalization verifies ~~, !~~, ~~*, !~~* normalization to LIKE variants.
 func TestExtractWhereConditions_PostgresOperatorNormalization(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -1134,6 +1157,7 @@ func TestExtractWhereConditions_PostgresOperatorNormalization(t *testing.T) {
 // SUBQUERY IN WHERE CLAUSE
 // =============================================================================
 
+// TestExtractWhereConditions_Subquery validates WHERE extraction with IN, EXISTS, and NOT EXISTS subqueries.
 func TestExtractWhereConditions_Subquery(t *testing.T) {
 	// Note: The current implementation extracts conditions from both outer queries
 	// AND subqueries. This tests that subquery-containing queries parse successfully
@@ -1192,6 +1216,7 @@ func TestExtractWhereConditions_Subquery(t *testing.T) {
 // CTE WITH WHERE CLAUSE
 // =============================================================================
 
+// TestExtractWhereConditions_CTE checks WHERE extraction from both CTE body and outer query.
 func TestExtractWhereConditions_CTE(t *testing.T) {
 	query := `
 		WITH active_orders AS (
@@ -1212,6 +1237,7 @@ func TestExtractWhereConditions_CTE(t *testing.T) {
 // JSONB OPERATORS: ->>
 // =============================================================================
 
+// TestExtractWhereConditions_JSONB validates JSONB ->> operator extraction with key, value, and table.
 func TestExtractWhereConditions_JSONB(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -1283,6 +1309,7 @@ func TestExtractWhereConditions_JSONB(t *testing.T) {
 	}
 }
 
+// TestExtractWhereConditions_JSONBWithAlias verifies JSONB extraction resolves table aliases.
 func TestExtractWhereConditions_JSONBWithAlias(t *testing.T) {
 	query := `
 		SELECT o.id, o.order_details->>'shipping_method'
@@ -1315,6 +1342,7 @@ func TestExtractWhereConditions_JSONBWithAlias(t *testing.T) {
 // FUNCTION CALLS IN WHERE
 // =============================================================================
 
+// TestExtractWhereConditions_Functions confirms WHERE with LOWER, COALESCE, and DATE functions parses successfully.
 func TestExtractWhereConditions_Functions(t *testing.T) {
 	tests := []struct {
 		name          string

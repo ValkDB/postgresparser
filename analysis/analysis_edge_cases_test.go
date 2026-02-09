@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test USING and NATURAL joins
+// TestAnalyzeUSINGJoin validates USING clause join column extraction.
 func TestAnalyzeUSINGJoin(t *testing.T) {
 	sql := `SELECT * FROM orders o
 			JOIN customers c USING (customer_id, company_id)
@@ -33,6 +33,7 @@ func TestAnalyzeUSINGJoin(t *testing.T) {
 	assert.Contains(t, joinColumns, "company_id")
 }
 
+// TestAnalyzeNaturalJoin verifies NATURAL JOIN detects both tables and filter columns.
 func TestAnalyzeNaturalJoin(t *testing.T) {
 	sql := `SELECT * FROM employees e
 			NATURAL JOIN departments d
@@ -95,7 +96,7 @@ func TestAnalyzeMergeDeleteWithCondition(t *testing.T) {
 		"DELETE condition is empty because the grammar does not support AND conditions on merge_delete_clause")
 }
 
-// Test set operations (UNION, INTERSECT, EXCEPT)
+// TestAnalyzeUnionQuery validates UNION ALL set operation and filter extraction from both branches.
 func TestAnalyzeUnionQuery(t *testing.T) {
 	sql := `SELECT id, name FROM employees WHERE department = ?
 			UNION ALL
@@ -128,6 +129,7 @@ func TestAnalyzeUnionQuery(t *testing.T) {
 	assert.True(t, hasContractorFilter, "Should detect active filter")
 }
 
+// TestAnalyzeIntersectExcept checks INTERSECT and EXCEPT set operation detection.
 func TestAnalyzeIntersectExcept(t *testing.T) {
 	sql := `(SELECT product_id FROM orders WHERE created_at > ?)
 			INTERSECT
@@ -143,7 +145,7 @@ func TestAnalyzeIntersectExcept(t *testing.T) {
 	assert.GreaterOrEqual(t, len(result.SetOperations), 2)
 }
 
-// Test multiple window functions in single query
+// TestAnalyzeMultipleWindowFunctions verifies partition and order usage from multiple window functions.
 func TestAnalyzeMultipleWindowFunctions(t *testing.T) {
 	sql := `SELECT
 			employee_id,
@@ -173,7 +175,7 @@ func TestAnalyzeMultipleWindowFunctions(t *testing.T) {
 	assert.GreaterOrEqual(t, windowOrderCount, 2, "Should detect multiple order clauses")
 }
 
-// Test RETURNING with qualified columns
+// TestAnalyzeReturningQualified validates RETURNING with table-qualified columns in UPDATE.
 func TestAnalyzeReturningQualified(t *testing.T) {
 	sql := `UPDATE public.orders o
 			SET status = ?, updated_at = NOW()
@@ -192,7 +194,7 @@ func TestAnalyzeReturningQualified(t *testing.T) {
 	assert.GreaterOrEqual(t, len(result.Returning), 4)
 }
 
-// Test quoted and schema-qualified identifiers in DML
+// TestAnalyzeQuotedIdentifiersDML checks quoted and schema-qualified identifiers in UPDATE.
 func TestAnalyzeQuotedIdentifiersDML(t *testing.T) {
 	sql := `UPDATE "Public"."Orders" o
 			SET "Status" = ?, "UpdatedAt" = NOW()
@@ -225,7 +227,7 @@ func TestAnalyzeQuotedIdentifiersDML(t *testing.T) {
 	_ = hasQuotedColumn // Parser might normalize these
 }
 
-// Test same column name from multiple tables
+// TestAnalyzeSameColumnMultipleTables verifies disambiguation of same-named columns across tables.
 func TestAnalyzeSameColumnMultipleTables(t *testing.T) {
 	sql := `SELECT o.id, c.id, p.id, o.name, c.name
 			FROM orders o
@@ -252,7 +254,7 @@ func TestAnalyzeSameColumnMultipleTables(t *testing.T) {
 	assert.GreaterOrEqual(t, statusCount, 3, "Should detect status filters from multiple tables")
 }
 
-// Test complex join with multiple conditions
+// TestAnalyzeComplexJoinConditions validates multi-condition INNER and LEFT JOIN extraction.
 func TestAnalyzeComplexJoinConditions(t *testing.T) {
 	sql := `SELECT * FROM orders o
 			INNER JOIN order_items oi ON o.id = oi.order_id
@@ -282,7 +284,7 @@ func TestAnalyzeComplexJoinConditions(t *testing.T) {
 	assert.Contains(t, joinColumns, "active")
 }
 
-// Test that unparseable SQL returns an error (no fallback).
+// TestAnalyzeErrorForInvalidSQL confirms that unparseable SQL returns an error.
 func TestAnalyzeErrorForInvalidSQL(t *testing.T) {
 	sql := `SELECT * FROM @#$invalid WHERE something = ?`
 
@@ -292,7 +294,7 @@ func TestAnalyzeErrorForInvalidSQL(t *testing.T) {
 	assert.Nil(t, result)
 }
 
-// Test complex nested subqueries
+// TestAnalyzeNestedSubqueries checks deeply nested subquery filter extraction.
 func TestAnalyzeNestedSubqueries(t *testing.T) {
 	sql := `SELECT * FROM (
 			  SELECT o.*,
@@ -332,7 +334,7 @@ func TestAnalyzeNestedSubqueries(t *testing.T) {
 	_ = hasItemCountFilter
 }
 
-// Test LATERAL join (advanced)
+// TestAnalyzeLateralJoin validates correlated LATERAL subquery detection.
 func TestAnalyzeLateralJoin(t *testing.T) {
 	sql := `SELECT u.id, u.name, recent.order_count, recent.total_spent
 			FROM users u
@@ -363,7 +365,7 @@ func TestAnalyzeLateralJoin(t *testing.T) {
 	assert.True(t, hasUserIdUsage, "Should detect correlated user_id")
 }
 
-// Test VALUES clause in INSERT
+// TestAnalyzeInsertMultipleValues verifies multi-row INSERT with ON CONFLICT and RETURNING.
 func TestAnalyzeInsertMultipleValues(t *testing.T) {
 	sql := `INSERT INTO products (name, price, category_id)
 			VALUES

@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestAnalyzeSQL_DDL_DropTable validates DROP TABLE metadata including IF EXISTS, CASCADE, and multi-table.
 func TestAnalyzeSQL_DDL_DropTable(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -97,6 +98,7 @@ func TestAnalyzeSQL_DDL_DropTable(t *testing.T) {
 	}
 }
 
+// TestAnalyzeSQL_DDL_DropIndex verifies DROP INDEX flags like IF EXISTS and CONCURRENTLY.
 func TestAnalyzeSQL_DDL_DropIndex(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -147,6 +149,7 @@ func TestAnalyzeSQL_DDL_DropIndex(t *testing.T) {
 	}
 }
 
+// TestAnalyzeSQL_DDL_CreateIndex checks CREATE INDEX variants including UNIQUE, CONCURRENTLY, and USING.
 func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -251,6 +254,7 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 	}
 }
 
+// TestAnalyzeSQL_DDL_AlterTableDropColumn validates ALTER TABLE DROP COLUMN with IF EXISTS and CASCADE.
 func TestAnalyzeSQL_DDL_AlterTableDropColumn(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -306,6 +310,7 @@ func TestAnalyzeSQL_DDL_AlterTableDropColumn(t *testing.T) {
 	}
 }
 
+// TestAnalyzeSQL_DDL_AlterTableAddColumn verifies ALTER TABLE ADD COLUMN metadata extraction.
 func TestAnalyzeSQL_DDL_AlterTableAddColumn(t *testing.T) {
 	res, err := AnalyzeSQL("ALTER TABLE users ADD COLUMN status text")
 	if err != nil {
@@ -327,6 +332,7 @@ func TestAnalyzeSQL_DDL_AlterTableAddColumn(t *testing.T) {
 	}
 }
 
+// TestAnalyzeSQL_DDL_AlterTableMultiAction checks ALTER TABLE with combined ADD and DROP actions.
 func TestAnalyzeSQL_DDL_AlterTableMultiAction(t *testing.T) {
 	res, err := AnalyzeSQL("ALTER TABLE users ADD COLUMN status text, DROP COLUMN legacy")
 	if err != nil {
@@ -355,6 +361,7 @@ func TestAnalyzeSQL_DDL_AlterTableMultiAction(t *testing.T) {
 	}
 }
 
+// TestAnalyzeSQL_DDL_Truncate validates TRUNCATE with CASCADE, RESTRICT, and multi-table support.
 func TestAnalyzeSQL_DDL_Truncate(t *testing.T) {
 	tests := []struct {
 		name       string

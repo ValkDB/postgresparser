@@ -13,6 +13,7 @@ import (
 // CR Issue 1: Combined Extraction Tests
 // =============================================================================
 
+// TestExtractQueryAnalysis_CombinedExtraction validates WHERE and join extraction in a single call.
 func TestExtractQueryAnalysis_CombinedExtraction(t *testing.T) {
 	// Test that we can extract WHERE conditions in one call.
 	// JoinRelationships is always nil without schema metadata.
@@ -38,6 +39,7 @@ func TestExtractQueryAnalysis_CombinedExtraction(t *testing.T) {
 	assert.NotNil(t, result.ParsedQuery, "ParsedQuery should be available")
 }
 
+// TestExtractQueryAnalysis_NoDoubleParsingVerification ensures combined extraction matches individual results.
 func TestExtractQueryAnalysis_NoDoubleParsingVerification(t *testing.T) {
 	// This test verifies that combined extraction parses only once
 	// by checking that WHERE results are consistent with individual extraction
@@ -69,6 +71,7 @@ func TestExtractQueryAnalysis_NoDoubleParsingVerification(t *testing.T) {
 // CR Issue 2: Schema-Based PK Detection Tests
 // =============================================================================
 
+// TestInferParentChildWithSchema_LeftIsPK verifies parent detection when the left column is a PK.
 func TestInferParentChildWithSchema_LeftIsPK(t *testing.T) {
 	// Test case: Left column is PK, right is not -> left is parent
 	schemaMap := map[string][]ColumnSchema{
@@ -91,6 +94,7 @@ func TestInferParentChildWithSchema_LeftIsPK(t *testing.T) {
 	assert.Equal(t, "customer_uuid", rel.ChildColumn)
 }
 
+// TestInferParentChildWithSchema_RightIsPK verifies parent detection when the right column is a PK.
 func TestInferParentChildWithSchema_RightIsPK(t *testing.T) {
 	// Test case: Right column is PK, left is not -> right is parent
 	schemaMap := map[string][]ColumnSchema{
@@ -112,6 +116,7 @@ func TestInferParentChildWithSchema_RightIsPK(t *testing.T) {
 	assert.Equal(t, "orders", rel.ChildTable, "orders should be child")
 }
 
+// TestInferParentChildWithSchema_NonStandardPKName checks PK detection with non-id column names.
 func TestInferParentChildWithSchema_NonStandardPKName(t *testing.T) {
 	// Test case: PK is NOT named "id" - this is what CR Issue 2 is about
 	schemaMap := map[string][]ColumnSchema{
@@ -133,6 +138,7 @@ func TestInferParentChildWithSchema_NonStandardPKName(t *testing.T) {
 	assert.Equal(t, "orders", rel.ChildTable, "orders should be child")
 }
 
+// TestInferParentChildWithSchema_BothArePKs confirms nil is returned when both columns are PKs.
 func TestInferParentChildWithSchema_BothArePKs(t *testing.T) {
 	// Test case: Both columns are PKs (e.g., junction table with composite PK)
 	// Should return nil -- can't determine parent/child without additional info
@@ -154,6 +160,7 @@ func TestInferParentChildWithSchema_BothArePKs(t *testing.T) {
 	assert.Nil(t, rel, "Should return nil when both columns are PKs")
 }
 
+// TestInferParentChildWithSchema_NeitherIsPK validates nil result when neither column is a PK.
 func TestInferParentChildWithSchema_NeitherIsPK(t *testing.T) {
 	// Test case: Neither column is PK
 	schemaMap := map[string][]ColumnSchema{
@@ -174,6 +181,7 @@ func TestInferParentChildWithSchema_NeitherIsPK(t *testing.T) {
 	assert.Nil(t, rel, "Should return nil when can't determine parent/child")
 }
 
+// TestInferParentChildWithSchema_MissingSchema checks graceful handling when schema is missing for one table.
 func TestInferParentChildWithSchema_MissingSchema(t *testing.T) {
 	// Test case: Schema not available for a table
 	schemaMap := map[string][]ColumnSchema{
@@ -190,6 +198,7 @@ func TestInferParentChildWithSchema_MissingSchema(t *testing.T) {
 	assert.Equal(t, "customers", rel.ParentTable)
 }
 
+// TestExtractQueryAnalysisWithSchema validates schema-aware join relationship extraction.
 func TestExtractQueryAnalysisWithSchema(t *testing.T) {
 	query := `
 		SELECT c.customer_number, o.total
@@ -237,6 +246,7 @@ func TestExtractQueryAnalysisWithSchema(t *testing.T) {
 // isColumnPrimaryKey Tests
 // =============================================================================
 
+// TestIsColumnPrimaryKey validates PK lookup across tables with standard and non-standard names.
 func TestIsColumnPrimaryKey(t *testing.T) {
 	schemaMap := map[string][]ColumnSchema{
 		"users": {
@@ -272,12 +282,14 @@ func TestIsColumnPrimaryKey(t *testing.T) {
 	}
 }
 
+// TestIsColumnPrimaryKey_NilSchemaMap confirms graceful handling with a nil schema map.
 func TestIsColumnPrimaryKey_NilSchemaMap(t *testing.T) {
 	// Should handle nil schema map gracefully
 	result := isColumnPrimaryKey("users", "id", nil)
 	assert.False(t, result)
 }
 
+// TestIsColumnPrimaryKey_CaseInsensitive verifies case-insensitive PK column matching.
 func TestIsColumnPrimaryKey_CaseInsensitive(t *testing.T) {
 	schemaMap := map[string][]ColumnSchema{
 		"users": {

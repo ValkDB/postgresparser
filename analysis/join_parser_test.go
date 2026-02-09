@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestDeduplicateRelationships validates removal of duplicate join relationships.
 func TestDeduplicateRelationships(t *testing.T) {
 	// Test that duplicate relationships are removed
 	rels := []JoinRelationship{

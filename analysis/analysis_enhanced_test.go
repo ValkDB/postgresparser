@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test Operator Extraction
+// TestAnalyze_OperatorExtraction validates individual operator extraction from WHERE predicates.
 func TestAnalyze_OperatorExtraction(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -68,7 +68,7 @@ func TestAnalyze_OperatorExtraction(t *testing.T) {
 	}
 }
 
-// Test Function Usage Metadata
+// TestAnalyze_FunctionUsage verifies aggregate and window function names in ColumnUsage.
 func TestAnalyze_FunctionUsage(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -113,7 +113,7 @@ func TestAnalyze_FunctionUsage(t *testing.T) {
 	}
 }
 
-// Test Limit Context (nested vs non-nested)
+// TestAnalyze_LimitContext checks LIMIT/OFFSET extraction and nested flag.
 func TestAnalyze_LimitContext(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -156,7 +156,7 @@ func TestAnalyze_LimitContext(t *testing.T) {
 	}
 }
 
-// Test Derived Column Lineage
+// TestAnalyze_DerivedColumns validates alias-to-expression lineage tracking.
 func TestAnalyze_DerivedColumns(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -212,7 +212,7 @@ func TestAnalyze_DerivedColumns(t *testing.T) {
 	}
 }
 
-// Test GROUP BY and HAVING extraction
+// TestAnalyze_GroupByHaving verifies GROUP BY column and HAVING clause extraction.
 func TestAnalyze_GroupByHaving(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -262,7 +262,7 @@ func TestAnalyze_GroupByHaving(t *testing.T) {
 	}
 }
 
-// Test LATERAL Join Correlation
+// TestAnalyze_LateralCorrelation checks LATERAL join correlation detection.
 func TestAnalyze_LateralCorrelation(t *testing.T) {
 	tests := []struct {
 		name            string

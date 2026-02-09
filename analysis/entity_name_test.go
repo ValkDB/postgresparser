@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestEntityNameFromTables validates entity name construction from base tables with deduplication and sorting.
 func TestEntityNameFromTables(t *testing.T) {
 	tests := []struct {
 		name     string

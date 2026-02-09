@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestColumnsForTableUsesColumnUsage validates ColumnsForTable filters by alias and usage types.
 func TestColumnsForTableUsesColumnUsage(t *testing.T) {
 	sql := `SELECT a.id, a.name, b.id FROM users a JOIN orders b ON a.id = b.user_id WHERE a.status = ? ORDER BY a.created_at`
 	an, err := AnalyzeSQL(sql)
@@ -26,6 +27,7 @@ func TestColumnsForTableUsesColumnUsage(t *testing.T) {
 	}
 }
 
+// TestUsageByRolesFilter verifies UsageByRoles returns only the requested usage type.
 func TestUsageByRolesFilter(t *testing.T) {
 	sql := `SELECT id FROM logs WHERE created_at > NOW() AND status = 'ok'`
 	an, err := AnalyzeSQL(sql)
@@ -43,6 +45,7 @@ func TestUsageByRolesFilter(t *testing.T) {
 	}
 }
 
+// TestLimitValue confirms LimitValue extracts the numeric LIMIT from analysis.
 func TestLimitValue(t *testing.T) {
 	sql := `SELECT * FROM metrics LIMIT 10`
 	an, err := AnalyzeSQL(sql)

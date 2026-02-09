@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestDebugOperatorExtraction logs operator extraction details for compound WHERE conditions.
 func TestDebugOperatorExtraction(t *testing.T) {
 	sql := `SELECT * FROM products WHERE price > 100 AND stock <= 50`
 
