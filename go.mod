@@ -4,7 +4,7 @@ go 1.25.6
 
 require (
 	github.com/antlr4-go/antlr/v4 v4.13.1
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.11.1
 )
 
 require (
