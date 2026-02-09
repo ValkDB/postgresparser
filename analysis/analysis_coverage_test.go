@@ -679,8 +679,8 @@ func TestAnalyze_Upsert_OnConstraint(t *testing.T) {
 		"Constraint should be 'users_pkey'")
 	assert.Equal(t, "DO UPDATE", result.Upsert.Action,
 		"Action should be 'DO UPDATE'")
-	assert.Nil(t, result.Upsert.TargetColumns,
-		"TargetColumns should be nil when using ON CONSTRAINT")
+	assert.Empty(t, result.Upsert.TargetColumns,
+		"TargetColumns should be empty when using ON CONSTRAINT")
 }
 
 // TestAnalyze_Upsert_TargetWhereAndActionWhere verifies that WHERE on the

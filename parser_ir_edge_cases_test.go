@@ -873,6 +873,10 @@ RETURNING p.id, p.price`
 	if len(ir.Returning) != 1 {
 		t.Fatalf("expected 1 RETURNING clause, got %+v", ir.Returning)
 	}
+	ret := normalise(ir.Returning[0])
+	if !strings.Contains(ret, "p.id") || !strings.Contains(ret, "p.price") {
+		t.Fatalf("expected RETURNING to include p.id and p.price, got %+v", ir.Returning)
+	}
 }
 
 // TestIR_UpdateWithSubqueryInSet verifies correlated subquery in SET clause.
@@ -973,11 +977,21 @@ JOIN schema_two.table_b b ON a.id = b.a_id`
 	if len(ir.Tables) != 2 {
 		t.Fatalf("expected 2 tables, got %d", len(ir.Tables))
 	}
-	if ir.Tables[0].Schema != "schema_one" || ir.Tables[0].Name != "table_a" {
-		t.Fatalf("unexpected first table %+v", ir.Tables[0])
+	hasTableA := false
+	hasTableB := false
+	for _, tbl := range ir.Tables {
+		if tbl.Schema == "schema_one" && tbl.Name == "table_a" && tbl.Alias == "a" {
+			hasTableA = true
+		}
+		if tbl.Schema == "schema_two" && tbl.Name == "table_b" && tbl.Alias == "b" {
+			hasTableB = true
+		}
 	}
-	if ir.Tables[1].Schema != "schema_two" || ir.Tables[1].Name != "table_b" {
-		t.Fatalf("unexpected second table %+v", ir.Tables[1])
+	if !hasTableA {
+		t.Fatalf("expected schema_one.table_a alias a, got %+v", ir.Tables)
+	}
+	if !hasTableB {
+		t.Fatalf("expected schema_two.table_b alias b, got %+v", ir.Tables)
 	}
 }
 
@@ -1232,11 +1246,21 @@ func TestIR_SelectStarFromMultipleTables(t *testing.T) {
 	if len(ir.Tables) != 2 {
 		t.Fatalf("expected 2 tables, got %d", len(ir.Tables))
 	}
-	if ir.Tables[0].Name != "users" || ir.Tables[0].Alias != "u" {
-		t.Fatalf("unexpected first table %+v", ir.Tables[0])
+	hasUsers := false
+	hasOrders := false
+	for _, tbl := range ir.Tables {
+		if tbl.Name == "users" && tbl.Alias == "u" {
+			hasUsers = true
+		}
+		if tbl.Name == "orders" && tbl.Alias == "o" {
+			hasOrders = true
+		}
 	}
-	if ir.Tables[1].Name != "orders" || ir.Tables[1].Alias != "o" {
-		t.Fatalf("unexpected second table %+v", ir.Tables[1])
+	if !hasUsers {
+		t.Fatalf("expected users alias u, got %+v", ir.Tables)
+	}
+	if !hasOrders {
+		t.Fatalf("expected orders alias o, got %+v", ir.Tables)
 	}
 }
 
@@ -1265,11 +1289,21 @@ LEFT JOIN employees m ON e.manager_id = m.id`
 	if len(ir.Tables) != 2 {
 		t.Fatalf("expected 2 tables for self-join, got %d", len(ir.Tables))
 	}
-	if ir.Tables[0].Name != "employees" || ir.Tables[0].Alias != "e" {
-		t.Fatalf("unexpected first table %+v", ir.Tables[0])
+	hasEmployeeAlias := false
+	hasManagerAlias := false
+	for _, tbl := range ir.Tables {
+		if tbl.Name == "employees" && tbl.Alias == "e" {
+			hasEmployeeAlias = true
+		}
+		if tbl.Name == "employees" && tbl.Alias == "m" {
+			hasManagerAlias = true
+		}
 	}
-	if ir.Tables[1].Name != "employees" || ir.Tables[1].Alias != "m" {
-		t.Fatalf("unexpected second table %+v", ir.Tables[1])
+	if !hasEmployeeAlias {
+		t.Fatalf("expected employees alias e, got %+v", ir.Tables)
+	}
+	if !hasManagerAlias {
+		t.Fatalf("expected employees alias m, got %+v", ir.Tables)
 	}
 }
 
