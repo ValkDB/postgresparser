@@ -5,6 +5,9 @@ package postgresparser
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -25,18 +28,10 @@ WHERE id IN (
 )`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandSelect {
-		t.Fatalf("expected SELECT, got %s", ir.Command)
-	}
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(ir.Where[0], "IN") {
-		t.Fatalf("expected WHERE to contain IN, got %q", ir.Where[0])
-	}
-	if !containsTable(ir.Tables, "users") {
-		t.Fatalf("expected users table, got %+v", ir.Tables)
-	}
+	assert.Equal(t, QueryCommandSelect, ir.Command, "expected SELECT command")
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, ir.Where[0], "IN", "expected WHERE to contain IN")
+	assert.True(t, containsTable(ir.Tables, "users"), "expected users table")
 }
 
 // TestIR_SubqueryInSelectList verifies scalar subquery in SELECT projection.
@@ -49,16 +44,9 @@ SELECT
 FROM users u`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Columns) != 3 {
-		t.Fatalf("expected 3 columns, got %d: %+v", len(ir.Columns), ir.Columns)
-	}
-	if ir.Columns[2].Alias != "order_count" {
-		t.Fatalf("expected alias 'order_count', got %q", ir.Columns[2].Alias)
-	}
-	expr := ir.Columns[2].Expression
-	if !strings.Contains(expr, "SELECT COUNT(*)") {
-		t.Fatalf("expected subquery in select list expression, got %q", expr)
-	}
+	require.Len(t, ir.Columns, 3, "expected 3 columns")
+	assert.Equal(t, "order_count", ir.Columns[2].Alias, "expected alias 'order_count'")
+	assert.Contains(t, ir.Columns[2].Expression, "SELECT COUNT(*)", "expected subquery in select list expression")
 }
 
 // TestIR_SubqueryInFrom confirms derived table in FROM with GROUP BY/HAVING.
@@ -74,21 +62,18 @@ FROM (
 WHERE sub.total_amount < 10000`
 	ir := parseAssertNoError(t, sql)
 
-	if !containsTable(ir.Tables, "payments") {
-		t.Fatalf("expected payments table to be surfaced from subquery, got %+v", ir.Tables)
-	}
+	assert.True(t, containsTable(ir.Tables, "payments"), "expected payments table to be surfaced from subquery")
+
 	foundSubquery := false
 	for _, tbl := range ir.Tables {
 		if tbl.Type == TableTypeSubquery && tbl.Alias == "sub" {
 			foundSubquery = true
 		}
 	}
-	if !foundSubquery {
-		t.Fatalf("expected subquery table with alias 'sub', got %+v", ir.Tables)
-	}
-	if len(ir.Subqueries) == 0 {
-		t.Fatalf("expected subquery metadata, got none")
-	}
+	assert.True(t, foundSubquery, "expected subquery table with alias 'sub'")
+
+	require.NotEmpty(t, ir.Subqueries, "expected subquery metadata")
+
 	// Verify the subquery's internal details
 	var sq *SubqueryRef
 	for i := range ir.Subqueries {
@@ -97,12 +82,10 @@ WHERE sub.total_amount < 10000`
 			break
 		}
 	}
-	if sq == nil || sq.Query == nil {
-		t.Fatalf("expected parsed subquery metadata")
-	}
-	if len(sq.Query.GroupBy) == 0 || !strings.Contains(sq.Query.GroupBy[0], "user_id") {
-		t.Fatalf("expected subquery GROUP BY user_id, got %+v", sq.Query.GroupBy)
-	}
+	require.NotNil(t, sq, "expected parsed subquery metadata")
+	require.NotNil(t, sq.Query, "expected parsed subquery query")
+	require.NotEmpty(t, sq.Query.GroupBy, "expected subquery GROUP BY")
+	assert.Contains(t, sq.Query.GroupBy[0], "user_id", "expected subquery GROUP BY user_id")
 }
 
 // ---------------------------------------------------------------------------
@@ -128,20 +111,16 @@ filtered AS (
 SELECT * FROM filtered ORDER BY total DESC`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.CTEs) != 3 {
-		t.Fatalf("expected 3 CTEs, got %d: %+v", len(ir.CTEs), ir.CTEs)
-	}
+	require.Len(t, ir.CTEs, 3, "expected 3 CTEs")
 	names := make([]string, len(ir.CTEs))
 	for i, cte := range ir.CTEs {
 		names[i] = strings.ToLower(cte.Name)
 	}
-	if names[0] != "base" || names[1] != "summarized" || names[2] != "filtered" {
-		t.Fatalf("unexpected CTE names: %v", names)
-	}
+	assert.Equal(t, []string{"base", "summarized", "filtered"}, names, "unexpected CTE names")
+
 	// The base table "transactions" should be found
-	if !containsTable(ir.Tables, "transactions") {
-		t.Fatalf("expected transactions table from CTE, got %+v", ir.Tables)
-	}
+	assert.True(t, containsTable(ir.Tables, "transactions"), "expected transactions table from CTE")
+
 	// "filtered" should be a CTE reference
 	foundFilteredCTE := false
 	for _, tbl := range ir.Tables {
@@ -149,9 +128,7 @@ SELECT * FROM filtered ORDER BY total DESC`
 			foundFilteredCTE = true
 		}
 	}
-	if !foundFilteredCTE {
-		t.Fatalf("expected filtered CTE reference in tables, got %+v", ir.Tables)
-	}
+	assert.True(t, foundFilteredCTE, "expected filtered CTE reference in tables")
 }
 
 // TestIR_CTEWithMaterialized checks MATERIALIZED annotation on CTEs.
@@ -163,16 +140,10 @@ WITH active AS MATERIALIZED (
 SELECT * FROM active`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.CTEs) != 1 {
-		t.Fatalf("expected 1 CTE, got %d", len(ir.CTEs))
-	}
-	if strings.ToLower(ir.CTEs[0].Name) != "active" {
-		t.Fatalf("expected CTE name 'active', got %q", ir.CTEs[0].Name)
-	}
+	require.Len(t, ir.CTEs, 1, "expected 1 CTE")
+	assert.Equal(t, "active", strings.ToLower(ir.CTEs[0].Name), "expected CTE name 'active'")
 	// Materialized annotation should be captured
-	if !strings.Contains(strings.ToUpper(ir.CTEs[0].Materialized), "MATERIALIZED") {
-		t.Fatalf("expected MATERIALIZED annotation, got %q", ir.CTEs[0].Materialized)
-	}
+	assert.Contains(t, strings.ToUpper(ir.CTEs[0].Materialized), "MATERIALIZED", "expected MATERIALIZED annotation")
 }
 
 // ---------------------------------------------------------------------------
@@ -195,17 +166,11 @@ SELECT
 FROM tasks`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Columns) != 1 {
-		t.Fatalf("expected 1 column, got %d", len(ir.Columns))
-	}
-	if ir.Columns[0].Alias != "label" {
-		t.Fatalf("expected alias 'label', got %q", ir.Columns[0].Alias)
-	}
+	require.Len(t, ir.Columns, 1, "expected 1 column")
+	assert.Equal(t, "label", ir.Columns[0].Alias, "expected alias 'label'")
 	expr := ir.Columns[0].Expression
 	// Nested CASE should be present
-	if strings.Count(expr, "CASE") < 2 {
-		t.Fatalf("expected nested CASE expression, got %q", expr)
-	}
+	assert.GreaterOrEqual(t, strings.Count(expr, "CASE"), 2, "expected nested CASE expression")
 }
 
 // TestIR_CaseInWhereClause verifies CASE expression in WHERE predicate.
@@ -216,12 +181,8 @@ FROM users
 WHERE CASE WHEN role = 'admin' THEN true ELSE false END = true`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(ir.Where[0], "CASE") {
-		t.Fatalf("expected CASE in WHERE, got %q", ir.Where[0])
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, ir.Where[0], "CASE", "expected CASE in WHERE")
 }
 
 // TestIR_CaseInOrderBy confirms CASE expression in ORDER BY with direction.
@@ -237,15 +198,9 @@ ORDER BY
   END ASC`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.OrderBy) != 1 {
-		t.Fatalf("expected 1 ORDER BY, got %d", len(ir.OrderBy))
-	}
-	if !strings.Contains(ir.OrderBy[0].Expression, "CASE") {
-		t.Fatalf("expected CASE in ORDER BY, got %q", ir.OrderBy[0].Expression)
-	}
-	if ir.OrderBy[0].Direction != "ASC" {
-		t.Fatalf("expected ASC direction, got %q", ir.OrderBy[0].Direction)
-	}
+	require.Len(t, ir.OrderBy, 1, "expected 1 ORDER BY")
+	assert.Contains(t, ir.OrderBy[0].Expression, "CASE", "expected CASE in ORDER BY")
+	assert.Equal(t, "ASC", ir.OrderBy[0].Direction, "expected ASC direction")
 }
 
 // ---------------------------------------------------------------------------
@@ -257,12 +212,8 @@ func TestIR_ArrayAnyOperator(t *testing.T) {
 	sql := `SELECT id FROM users WHERE id = ANY($1)`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(ir.Where[0], "ANY") {
-		t.Fatalf("expected ANY in WHERE, got %q", ir.Where[0])
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, ir.Where[0], "ANY", "expected ANY in WHERE")
 }
 
 // TestIR_ArrayAllOperator verifies ALL() with subquery.
@@ -270,13 +221,9 @@ func TestIR_ArrayAllOperator(t *testing.T) {
 	sql := `SELECT id FROM scores WHERE score > ALL(SELECT min_score FROM thresholds)`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
 	whereUpper := strings.ToUpper(ir.Where[0])
-	if !strings.Contains(whereUpper, "ALL") {
-		t.Fatalf("expected ALL in WHERE, got %q", ir.Where[0])
-	}
+	assert.Contains(t, whereUpper, "ALL", "expected ALL in WHERE")
 }
 
 // TestIR_ArrayConstructor checks ARRAY[] constructor syntax.
@@ -284,12 +231,8 @@ func TestIR_ArrayConstructor(t *testing.T) {
 	sql := `SELECT ARRAY[1, 2, 3] AS nums FROM generate_series(1,1)`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Columns) != 1 {
-		t.Fatalf("expected 1 column, got %d", len(ir.Columns))
-	}
-	if ir.Columns[0].Alias != "nums" {
-		t.Fatalf("expected alias 'nums', got %q", ir.Columns[0].Alias)
-	}
+	require.Len(t, ir.Columns, 1, "expected 1 column")
+	assert.Equal(t, "nums", ir.Columns[0].Alias, "expected alias 'nums'")
 }
 
 // ---------------------------------------------------------------------------
@@ -301,15 +244,9 @@ func TestIR_TypeCastInProjection(t *testing.T) {
 	sql := `SELECT id::text, amount::numeric(10,2) AS amt FROM orders`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Columns) != 2 {
-		t.Fatalf("expected 2 columns, got %d", len(ir.Columns))
-	}
-	if !strings.Contains(ir.Columns[0].Expression, "::") {
-		t.Fatalf("expected type cast in first column, got %q", ir.Columns[0].Expression)
-	}
-	if ir.Columns[1].Alias != "amt" {
-		t.Fatalf("expected alias 'amt', got %q", ir.Columns[1].Alias)
-	}
+	require.Len(t, ir.Columns, 2, "expected 2 columns")
+	assert.Contains(t, ir.Columns[0].Expression, "::", "expected type cast in first column")
+	assert.Equal(t, "amt", ir.Columns[1].Alias, "expected alias 'amt'")
 }
 
 // TestIR_TypeCastInWhere verifies :: cast in WHERE clause.
@@ -317,12 +254,8 @@ func TestIR_TypeCastInWhere(t *testing.T) {
 	sql := `SELECT id FROM events WHERE created_at::date = '2024-01-01'::date`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(ir.Where[0], "::") {
-		t.Fatalf("expected type cast in WHERE, got %q", ir.Where[0])
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, ir.Where[0], "::", "expected type cast in WHERE")
 }
 
 // TestIR_CastFunction confirms CAST(expr AS type) syntax.
@@ -330,15 +263,9 @@ func TestIR_CastFunction(t *testing.T) {
 	sql := `SELECT CAST(price AS integer) AS int_price FROM products`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Columns) != 1 {
-		t.Fatalf("expected 1 column, got %d", len(ir.Columns))
-	}
-	if !strings.Contains(strings.ToUpper(ir.Columns[0].Expression), "CAST") {
-		t.Fatalf("expected CAST in column expression, got %q", ir.Columns[0].Expression)
-	}
-	if ir.Columns[0].Alias != "int_price" {
-		t.Fatalf("expected alias 'int_price', got %q", ir.Columns[0].Alias)
-	}
+	require.Len(t, ir.Columns, 1, "expected 1 column")
+	assert.Contains(t, strings.ToUpper(ir.Columns[0].Expression), "CAST", "expected CAST in column expression")
+	assert.Equal(t, "int_price", ir.Columns[0].Alias, "expected alias 'int_price'")
 }
 
 // ---------------------------------------------------------------------------
@@ -353,16 +280,12 @@ FROM table_a a
 JOIN table_b b ON a.col1 = b.col1 AND a.col2 = b.col2 AND a.col3 = b.col3`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Tables) != 2 {
-		t.Fatalf("expected 2 tables, got %d", len(ir.Tables))
-	}
-	if len(ir.JoinConditions) != 1 {
-		t.Fatalf("expected 1 join condition, got %d", len(ir.JoinConditions))
-	}
+	require.Len(t, ir.Tables, 2, "expected 2 tables")
+	require.Len(t, ir.JoinConditions, 1, "expected 1 join condition")
 	join := normalise(ir.JoinConditions[0])
-	if !strings.Contains(join, "a.col1=b.col1") || !strings.Contains(join, "a.col2=b.col2") || !strings.Contains(join, "a.col3=b.col3") {
-		t.Fatalf("expected multi-column join condition, got %q", ir.JoinConditions[0])
-	}
+	assert.Contains(t, join, "a.col1=b.col1", "expected multi-column join condition")
+	assert.Contains(t, join, "a.col2=b.col2", "expected multi-column join condition")
+	assert.Contains(t, join, "a.col3=b.col3", "expected multi-column join condition")
 }
 
 // TestIR_JoinWithSubquery verifies JOIN on a derived table.
@@ -378,21 +301,16 @@ JOIN (
 WHERE totals.sum_amount > 500`
 	ir := parseAssertNoError(t, sql)
 
-	if !containsTable(ir.Tables, "orders") {
-		t.Fatalf("expected orders table, got %+v", ir.Tables)
-	}
-	if !containsTable(ir.Tables, "line_items") {
-		t.Fatalf("expected line_items table from subquery, got %+v", ir.Tables)
-	}
+	assert.True(t, containsTable(ir.Tables, "orders"), "expected orders table")
+	assert.True(t, containsTable(ir.Tables, "line_items"), "expected line_items table from subquery")
+
 	foundSubq := false
 	for _, tbl := range ir.Tables {
 		if tbl.Type == TableTypeSubquery && tbl.Alias == "totals" {
 			foundSubq = true
 		}
 	}
-	if !foundSubq {
-		t.Fatalf("expected subquery table 'totals', got %+v", ir.Tables)
-	}
+	assert.True(t, foundSubq, "expected subquery table 'totals'")
 }
 
 // TestIR_MultipleJoinTypes checks INNER, LEFT, CROSS join mix.
@@ -405,14 +323,10 @@ LEFT JOIN products p ON o.product_id = p.id
 CROSS JOIN settings s`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Tables) != 4 {
-		t.Fatalf("expected 4 tables, got %d: %+v", len(ir.Tables), ir.Tables)
-	}
+	require.Len(t, ir.Tables, 4, "expected 4 tables")
 	expectedTables := []string{"users", "orders", "products", "settings"}
 	for _, name := range expectedTables {
-		if !containsTable(ir.Tables, name) {
-			t.Fatalf("expected table %q, got %+v", name, ir.Tables)
-		}
+		assert.True(t, containsTable(ir.Tables, name), "expected table %q", name)
 	}
 }
 
@@ -424,15 +338,9 @@ FROM departments d
 JOIN employees e USING (department_id)`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Tables) != 2 {
-		t.Fatalf("expected 2 tables, got %d", len(ir.Tables))
-	}
-	if len(ir.JoinConditions) != 1 {
-		t.Fatalf("expected 1 join condition, got %d", len(ir.JoinConditions))
-	}
-	if !strings.Contains(strings.ToUpper(ir.JoinConditions[0]), "USING") {
-		t.Fatalf("expected USING in join condition, got %q", ir.JoinConditions[0])
-	}
+	require.Len(t, ir.Tables, 2, "expected 2 tables")
+	require.Len(t, ir.JoinConditions, 1, "expected 1 join condition")
+	assert.Contains(t, strings.ToUpper(ir.JoinConditions[0]), "USING", "expected USING in join condition")
 }
 
 // ---------------------------------------------------------------------------
@@ -453,18 +361,15 @@ CROSS JOIN LATERAL (
 ) recent`
 	ir := parseAssertNoError(t, sql)
 
-	if !containsTable(ir.Tables, "users") {
-		t.Fatalf("expected users table, got %+v", ir.Tables)
-	}
+	assert.True(t, containsTable(ir.Tables, "users"), "expected users table")
+
 	foundSubq := false
 	for _, tbl := range ir.Tables {
 		if tbl.Type == TableTypeSubquery && tbl.Alias == "recent" {
 			foundSubq = true
 		}
 	}
-	if !foundSubq {
-		t.Fatalf("expected LATERAL subquery 'recent', got %+v", ir.Tables)
-	}
+	assert.True(t, foundSubq, "expected LATERAL subquery 'recent'")
 }
 
 // TestIR_LateralJoinWithFunction verifies LATERAL function call (unnest).
@@ -475,18 +380,14 @@ FROM products p
 CROSS JOIN LATERAL unnest(p.tags) AS tag(value)`
 	ir := parseAssertNoError(t, sql)
 
-	if !containsTable(ir.Tables, "products") {
-		t.Fatalf("expected products table, got %+v", ir.Tables)
-	}
+	assert.True(t, containsTable(ir.Tables, "products"), "expected products table")
 	foundFunc := false
 	for _, tbl := range ir.Tables {
 		if tbl.Type == TableTypeFunction && tbl.Alias == "tag" {
 			foundFunc = true
 		}
 	}
-	if !foundFunc {
-		t.Fatalf("expected LATERAL function 'tag', got %+v", ir.Tables)
-	}
+	assert.True(t, foundFunc, "expected LATERAL function 'tag'")
 }
 
 // ---------------------------------------------------------------------------
@@ -597,7 +498,7 @@ GROUP BY DATE_TRUNC('month', created_at)`
 		t.Fatalf("expected 1 GROUP BY, got %d", len(ir.GroupBy))
 	}
 	if !strings.Contains(ir.GroupBy[0], "DATE_TRUNC") {
-		t.Fatalf("expected DATE_TRUNC in GROUP BY, got %q", ir.GroupBy[0])
+		assert.Contains(t, ir.GroupBy[0], "DATE_TRUNC", "expected DATE_TRUNC in GROUP BY")
 	}
 }
 
@@ -606,12 +507,8 @@ func TestIR_IntervalExpression(t *testing.T) {
 	sql := `SELECT * FROM events WHERE created_at > NOW() - INTERVAL '30 days'`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(ir.Where[0], "INTERVAL") {
-		t.Fatalf("expected INTERVAL in WHERE, got %q", ir.Where[0])
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, ir.Where[0], "INTERVAL", "expected INTERVAL in WHERE")
 }
 
 // TestIR_AtTimeZone validates AT TIME ZONE expression.
@@ -619,16 +516,10 @@ func TestIR_AtTimeZone(t *testing.T) {
 	sql := `SELECT created_at AT TIME ZONE 'UTC' AS utc_time FROM events`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Columns) != 1 {
-		t.Fatalf("expected 1 column, got %d", len(ir.Columns))
-	}
+	require.Len(t, ir.Columns, 1, "expected 1 column")
 	exprUpper := strings.ToUpper(ir.Columns[0].Expression)
-	if !strings.Contains(exprUpper, "AT TIME ZONE") {
-		t.Fatalf("expected AT TIME ZONE in expression, got %q", ir.Columns[0].Expression)
-	}
-	if ir.Columns[0].Alias != "utc_time" {
-		t.Fatalf("expected alias 'utc_time', got %q", ir.Columns[0].Alias)
-	}
+	assert.Contains(t, exprUpper, "AT TIME ZONE", "expected AT TIME ZONE in expression")
+	assert.Equal(t, "utc_time", ir.Columns[0].Alias, "expected alias 'utc_time'")
 }
 
 // ---------------------------------------------------------------------------
@@ -643,12 +534,9 @@ FROM metrics
 GROUP BY region, category`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.GroupBy) != 2 {
-		t.Fatalf("expected 2 GROUP BY items, got %d: %+v", len(ir.GroupBy), ir.GroupBy)
-	}
-	if ir.GroupBy[0] != "region" || ir.GroupBy[1] != "category" {
-		t.Fatalf("unexpected GROUP BY: %+v", ir.GroupBy)
-	}
+	require.Len(t, ir.GroupBy, 2, "expected 2 GROUP BY items")
+	assert.Equal(t, "region", ir.GroupBy[0], "unexpected GROUP BY item 1")
+	assert.Equal(t, "category", ir.GroupBy[1], "unexpected GROUP BY item 2")
 }
 
 // TestIR_GroupByWithExpression verifies expression-based GROUP BY.
@@ -659,12 +547,8 @@ FROM orders
 GROUP BY DATE_TRUNC('month', created_at)`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.GroupBy) != 1 {
-		t.Fatalf("expected 1 GROUP BY, got %d", len(ir.GroupBy))
-	}
-	if !strings.Contains(ir.GroupBy[0], "DATE_TRUNC") {
-		t.Fatalf("expected DATE_TRUNC in GROUP BY, got %q", ir.GroupBy[0])
-	}
+	require.Len(t, ir.GroupBy, 1, "expected 1 GROUP BY")
+	assert.Contains(t, ir.GroupBy[0], "DATE_TRUNC", "expected DATE_TRUNC in GROUP BY")
 }
 
 // ---------------------------------------------------------------------------
@@ -680,16 +564,10 @@ GROUP BY category
 HAVING COUNT(*) >= 10 AND AVG(price) < 100`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Having) != 1 {
-		t.Fatalf("expected 1 HAVING clause, got %d", len(ir.Having))
-	}
+	require.Len(t, ir.Having, 1, "expected 1 HAVING clause")
 	havingNorm := normalise(ir.Having[0])
-	if !strings.Contains(havingNorm, "count(*)>=10") {
-		t.Fatalf("expected COUNT condition in HAVING, got %q", ir.Having[0])
-	}
-	if !strings.Contains(havingNorm, "avg(price)<100") {
-		t.Fatalf("expected AVG condition in HAVING, got %q", ir.Having[0])
-	}
+	assert.Contains(t, havingNorm, "count(*)>=10", "expected COUNT condition in HAVING")
+	assert.Contains(t, havingNorm, "avg(price)<100", "expected AVG condition in HAVING")
 }
 
 // TestIR_HavingWithSubquery verifies subquery in HAVING clause.
@@ -701,12 +579,8 @@ GROUP BY department_id
 HAVING AVG(salary) > (SELECT AVG(salary) FROM employees)`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Having) != 1 {
-		t.Fatalf("expected 1 HAVING clause, got %d", len(ir.Having))
-	}
-	if !strings.Contains(ir.Having[0], "SELECT AVG(salary)") {
-		t.Fatalf("expected subquery in HAVING, got %q", ir.Having[0])
-	}
+	require.Len(t, ir.Having, 1, "expected 1 HAVING clause")
+	assert.Contains(t, ir.Having[0], "SELECT AVG(salary)", "expected subquery in HAVING")
 }
 
 // ---------------------------------------------------------------------------
@@ -724,24 +598,12 @@ SET quantity = inventory.quantity + EXCLUDED.quantity,
 RETURNING product_id, warehouse_id, quantity`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandInsert {
-		t.Fatalf("expected INSERT, got %s", ir.Command)
-	}
-	if ir.Upsert == nil {
-		t.Fatalf("expected Upsert metadata")
-	}
-	if ir.Upsert.Action != "DO UPDATE" {
-		t.Fatalf("expected DO UPDATE, got %q", ir.Upsert.Action)
-	}
-	if len(ir.Upsert.TargetColumns) != 2 {
-		t.Fatalf("expected 2 conflict target columns, got %+v", ir.Upsert.TargetColumns)
-	}
-	if len(ir.Upsert.SetClauses) < 2 {
-		t.Fatalf("expected at least 2 set clauses, got %+v", ir.Upsert.SetClauses)
-	}
-	if len(ir.InsertColumns) != 3 {
-		t.Fatalf("expected 3 insert columns, got %+v", ir.InsertColumns)
-	}
+	assert.Equal(t, QueryCommandInsert, ir.Command, "expected INSERT")
+	require.NotNil(t, ir.Upsert, "expected Upsert metadata")
+	assert.Equal(t, "DO UPDATE", ir.Upsert.Action, "expected DO UPDATE")
+	require.Len(t, ir.Upsert.TargetColumns, 2, "expected 2 conflict target columns")
+	assert.GreaterOrEqual(t, len(ir.Upsert.SetClauses), 2, "expected at least 2 set clauses")
+	require.Len(t, ir.InsertColumns, 3, "expected 3 insert columns")
 }
 
 // TestIR_OnConflictDoUpdateWithWhere verifies DO UPDATE with WHERE filter.
@@ -755,18 +617,10 @@ SET login_count = users.login_count + 1,
 WHERE users.active = true`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Upsert == nil {
-		t.Fatalf("expected Upsert metadata")
-	}
-	if ir.Upsert.Action != "DO UPDATE" {
-		t.Fatalf("expected DO UPDATE, got %q", ir.Upsert.Action)
-	}
-	if ir.Upsert.ActionWhere == "" {
-		t.Fatalf("expected ActionWhere to be populated")
-	}
-	if !strings.Contains(ir.Upsert.ActionWhere, "active") {
-		t.Fatalf("expected active in ActionWhere, got %q", ir.Upsert.ActionWhere)
-	}
+	require.NotNil(t, ir.Upsert, "expected Upsert metadata")
+	assert.Equal(t, "DO UPDATE", ir.Upsert.Action, "expected DO UPDATE")
+	require.NotEmpty(t, ir.Upsert.ActionWhere, "expected ActionWhere to be populated")
+	assert.Contains(t, ir.Upsert.ActionWhere, "active", "expected active in ActionWhere")
 }
 
 // TestIR_OnConflictOnConstraint checks ON CONSTRAINT conflict target.
@@ -777,15 +631,9 @@ VALUES ($1, $2)
 ON CONFLICT ON CONSTRAINT accounts_pkey DO NOTHING`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Upsert == nil {
-		t.Fatalf("expected Upsert metadata")
-	}
-	if ir.Upsert.Action != "DO NOTHING" {
-		t.Fatalf("expected DO NOTHING, got %q", ir.Upsert.Action)
-	}
-	if ir.Upsert.Constraint != "accounts_pkey" {
-		t.Fatalf("expected constraint 'accounts_pkey', got %q", ir.Upsert.Constraint)
-	}
+	require.NotNil(t, ir.Upsert, "expected Upsert metadata")
+	assert.Equal(t, "DO NOTHING", ir.Upsert.Action, "expected DO NOTHING")
+	assert.Equal(t, "accounts_pkey", ir.Upsert.Constraint, "expected constraint 'accounts_pkey'")
 }
 
 // ---------------------------------------------------------------------------
@@ -801,21 +649,11 @@ WHERE o.customer_id = c.id AND c.status = 'inactive'
 RETURNING o.id`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandDelete {
-		t.Fatalf("expected DELETE, got %s", ir.Command)
-	}
-	if !containsTable(ir.Tables, "orders") {
-		t.Fatalf("expected orders table, got %+v", ir.Tables)
-	}
-	if !containsTable(ir.Tables, "customers") {
-		t.Fatalf("expected customers table from USING, got %+v", ir.Tables)
-	}
-	if len(ir.Where) < 1 {
-		t.Fatalf("expected WHERE clause, got %+v", ir.Where)
-	}
-	if len(ir.Returning) != 1 {
-		t.Fatalf("expected 1 RETURNING clause, got %+v", ir.Returning)
-	}
+	assert.Equal(t, QueryCommandDelete, ir.Command, "expected DELETE")
+	assert.True(t, containsTable(ir.Tables, "orders"), "expected orders table")
+	assert.True(t, containsTable(ir.Tables, "customers"), "expected customers table from USING")
+	require.NotEmpty(t, ir.Where, "expected WHERE clause")
+	require.Len(t, ir.Returning, 1, "expected 1 RETURNING clause")
 }
 
 // TestIR_DeleteWithMultipleUsingTables verifies DELETE with multiple USING tables.
@@ -828,18 +666,10 @@ WHERE li.order_id = o.id
   AND c.deleted_at IS NOT NULL`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandDelete {
-		t.Fatalf("expected DELETE, got %s", ir.Command)
-	}
-	if !containsTable(ir.Tables, "line_items") {
-		t.Fatalf("expected line_items table")
-	}
-	if !containsTable(ir.Tables, "orders") {
-		t.Fatalf("expected orders table from USING")
-	}
-	if !containsTable(ir.Tables, "customers") {
-		t.Fatalf("expected customers table from USING")
-	}
+	assert.Equal(t, QueryCommandDelete, ir.Command, "expected DELETE")
+	assert.True(t, containsTable(ir.Tables, "line_items"), "expected line_items table")
+	assert.True(t, containsTable(ir.Tables, "orders"), "expected orders table from USING")
+	assert.True(t, containsTable(ir.Tables, "customers"), "expected customers table from USING")
 }
 
 // ---------------------------------------------------------------------------
@@ -858,25 +688,14 @@ WHERE p.category_id = d.category_id
 RETURNING p.id, p.price`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandUpdate {
-		t.Fatalf("expected UPDATE, got %s", ir.Command)
-	}
-	if !containsTable(ir.Tables, "products") {
-		t.Fatalf("expected products table, got %+v", ir.Tables)
-	}
-	if !containsTable(ir.Tables, "discounts") {
-		t.Fatalf("expected discounts table from FROM, got %+v", ir.Tables)
-	}
-	if len(ir.SetClauses) < 2 {
-		t.Fatalf("expected at least 2 set clauses, got %+v", ir.SetClauses)
-	}
-	if len(ir.Returning) != 1 {
-		t.Fatalf("expected 1 RETURNING clause, got %+v", ir.Returning)
-	}
+	assert.Equal(t, QueryCommandUpdate, ir.Command, "expected UPDATE")
+	assert.True(t, containsTable(ir.Tables, "products"), "expected products table")
+	assert.True(t, containsTable(ir.Tables, "discounts"), "expected discounts table from FROM")
+	assert.GreaterOrEqual(t, len(ir.SetClauses), 2, "expected at least 2 set clauses")
+	require.Len(t, ir.Returning, 1, "expected 1 RETURNING clause")
 	ret := normalise(ir.Returning[0])
-	if !strings.Contains(ret, "p.id") || !strings.Contains(ret, "p.price") {
-		t.Fatalf("expected RETURNING to include p.id and p.price, got %+v", ir.Returning)
-	}
+	assert.Contains(t, ret, "p.id", "expected RETURNING to include p.id")
+	assert.Contains(t, ret, "p.price", "expected RETURNING to include p.price")
 }
 
 // TestIR_UpdateWithSubqueryInSet verifies correlated subquery in SET clause.
@@ -887,15 +706,9 @@ SET total_orders = (SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id)
 WHERE active = true`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandUpdate {
-		t.Fatalf("expected UPDATE, got %s", ir.Command)
-	}
-	if len(ir.SetClauses) != 1 {
-		t.Fatalf("expected 1 set clause, got %+v", ir.SetClauses)
-	}
-	if !strings.Contains(ir.SetClauses[0], "SELECT COUNT(*)") {
-		t.Fatalf("expected subquery in SET, got %q", ir.SetClauses[0])
-	}
+	assert.Equal(t, QueryCommandUpdate, ir.Command, "expected UPDATE")
+	require.Len(t, ir.SetClauses, 1, "expected 1 set clause")
+	assert.Contains(t, ir.SetClauses[0], "SELECT COUNT(*)", "expected subquery in SET")
 }
 
 // TestIR_UpdateWithCTE checks CTE-powered UPDATE.
@@ -909,15 +722,9 @@ SET active = false
 WHERE id IN (SELECT id FROM expired)`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandUpdate {
-		t.Fatalf("expected UPDATE, got %s", ir.Command)
-	}
-	if len(ir.CTEs) != 1 {
-		t.Fatalf("expected 1 CTE, got %d", len(ir.CTEs))
-	}
-	if strings.ToLower(ir.CTEs[0].Name) != "expired" {
-		t.Fatalf("expected CTE 'expired', got %q", ir.CTEs[0].Name)
-	}
+	assert.Equal(t, QueryCommandUpdate, ir.Command, "expected UPDATE")
+	require.Len(t, ir.CTEs, 1, "expected 1 CTE")
+	assert.Equal(t, "expired", strings.ToLower(ir.CTEs[0].Name), "expected CTE 'expired'")
 }
 
 // ---------------------------------------------------------------------------
@@ -929,12 +736,8 @@ func TestIR_EmptyStringLiteral(t *testing.T) {
 	sql := `SELECT id FROM users WHERE name = ''`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(ir.Where[0], "''") {
-		t.Fatalf("expected empty string literal in WHERE, got %q", ir.Where[0])
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, ir.Where[0], "''", "expected empty string literal in WHERE")
 }
 
 // TestIR_QuotedIdentifiers verifies double-quoted reserved words as identifiers.
@@ -942,12 +745,8 @@ func TestIR_QuotedIdentifiers(t *testing.T) {
 	sql := `SELECT "user"."order" FROM "user" WHERE "user"."group" = 'admin'`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Tables) != 1 {
-		t.Fatalf("expected 1 table, got %d: %+v", len(ir.Tables), ir.Tables)
-	}
-	if len(ir.Columns) != 1 {
-		t.Fatalf("expected 1 column, got %d", len(ir.Columns))
-	}
+	require.Len(t, ir.Tables, 1, "expected 1 table")
+	require.Len(t, ir.Columns, 1, "expected 1 column")
 }
 
 // TestIR_SchemaQualifiedTable confirms schema.table notation.
@@ -955,15 +754,9 @@ func TestIR_SchemaQualifiedTable(t *testing.T) {
 	sql := `SELECT id FROM public.users WHERE active = true`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Tables) != 1 {
-		t.Fatalf("expected 1 table, got %d", len(ir.Tables))
-	}
-	if ir.Tables[0].Schema != "public" {
-		t.Fatalf("expected schema 'public', got %q", ir.Tables[0].Schema)
-	}
-	if ir.Tables[0].Name != "users" {
-		t.Fatalf("expected table 'users', got %q", ir.Tables[0].Name)
-	}
+	require.Len(t, ir.Tables, 1, "expected 1 table")
+	assert.Equal(t, "public", ir.Tables[0].Schema, "expected schema 'public'")
+	assert.Equal(t, "users", ir.Tables[0].Name, "expected table 'users'")
 }
 
 // TestIR_MultipleSchemaQualifiedTables validates cross-schema joins.
@@ -974,9 +767,7 @@ FROM schema_one.table_a a
 JOIN schema_two.table_b b ON a.id = b.a_id`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Tables) != 2 {
-		t.Fatalf("expected 2 tables, got %d", len(ir.Tables))
-	}
+	require.Len(t, ir.Tables, 2, "expected 2 tables")
 	hasTableA := false
 	hasTableB := false
 	for _, tbl := range ir.Tables {
@@ -987,12 +778,8 @@ JOIN schema_two.table_b b ON a.id = b.a_id`
 			hasTableB = true
 		}
 	}
-	if !hasTableA {
-		t.Fatalf("expected schema_one.table_a alias a, got %+v", ir.Tables)
-	}
-	if !hasTableB {
-		t.Fatalf("expected schema_two.table_b alias b, got %+v", ir.Tables)
-	}
+	assert.True(t, hasTableA, "expected schema_one.table_a alias a")
+	assert.True(t, hasTableB, "expected schema_two.table_b alias b")
 }
 
 // TestIR_SelectDistinct checks SELECT DISTINCT.
@@ -1000,12 +787,9 @@ func TestIR_SelectDistinct(t *testing.T) {
 	sql := `SELECT DISTINCT category FROM products`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Columns) != 1 || ir.Columns[0].Expression != "category" {
-		t.Fatalf("expected column 'category', got %+v", ir.Columns)
-	}
-	if !containsTable(ir.Tables, "products") {
-		t.Fatalf("expected products table")
-	}
+	require.Len(t, ir.Columns, 1, "expected 1 column")
+	assert.Equal(t, "category", ir.Columns[0].Expression, "expected column 'category'")
+	assert.True(t, containsTable(ir.Tables, "products"), "expected products table")
 }
 
 // TestIR_SelectDistinctOn validates DISTINCT ON with ORDER BY extraction.
@@ -1013,12 +797,8 @@ func TestIR_SelectDistinctOn(t *testing.T) {
 	sql := `SELECT DISTINCT ON (user_id) user_id, created_at FROM events ORDER BY user_id, created_at DESC`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Columns) < 1 {
-		t.Fatalf("expected at least 1 column, got %d", len(ir.Columns))
-	}
-	if len(ir.OrderBy) != 2 {
-		t.Fatalf("expected 2 ORDER BY, got %d", len(ir.OrderBy))
-	}
+	assert.NotEmpty(t, ir.Columns, "expected at least 1 column")
+	assert.Len(t, ir.OrderBy, 2, "expected 2 ORDER BY")
 }
 
 // TestIR_BooleanExpressions verifies IS TRUE and IS NOT TRUE predicates in WHERE.
@@ -1030,13 +810,9 @@ WHERE active = true
   AND verified IS TRUE`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
 	whereUpper := strings.ToUpper(ir.Where[0])
-	if !strings.Contains(whereUpper, "IS NOT TRUE") {
-		t.Fatalf("expected IS NOT TRUE in WHERE, got %q", ir.Where[0])
-	}
+	assert.Contains(t, whereUpper, "IS NOT TRUE", "expected IS NOT TRUE in WHERE")
 }
 
 // TestIR_InListExpression validates IN list with multiple string literals.
@@ -1044,12 +820,8 @@ func TestIR_InListExpression(t *testing.T) {
 	sql := `SELECT * FROM users WHERE status IN ('active', 'pending', 'trial')`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(strings.ToUpper(ir.Where[0]), "IN") {
-		t.Fatalf("expected IN in WHERE, got %q", ir.Where[0])
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, strings.ToUpper(ir.Where[0]), "IN", "expected IN in WHERE")
 }
 
 // TestIR_BetweenExpression checks BETWEEN range predicate in WHERE.
@@ -1057,12 +829,8 @@ func TestIR_BetweenExpression(t *testing.T) {
 	sql := `SELECT * FROM orders WHERE created_at BETWEEN '2024-01-01' AND '2024-12-31'`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(strings.ToUpper(ir.Where[0]), "BETWEEN") {
-		t.Fatalf("expected BETWEEN in WHERE, got %q", ir.Where[0])
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, strings.ToUpper(ir.Where[0]), "BETWEEN", "expected BETWEEN in WHERE")
 }
 
 // TestIR_LikeExpression confirms LIKE pattern matching in WHERE.
@@ -1070,12 +838,8 @@ func TestIR_LikeExpression(t *testing.T) {
 	sql := `SELECT * FROM users WHERE email LIKE '%@example.com'`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(strings.ToUpper(ir.Where[0]), "LIKE") {
-		t.Fatalf("expected LIKE in WHERE, got %q", ir.Where[0])
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, strings.ToUpper(ir.Where[0]), "LIKE", "expected LIKE in WHERE")
 }
 
 // TestIR_ILikeExpression verifies case-insensitive ILIKE in WHERE.
@@ -1083,12 +847,8 @@ func TestIR_ILikeExpression(t *testing.T) {
 	sql := `SELECT * FROM users WHERE name ILIKE $1`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
-	if !strings.Contains(strings.ToUpper(ir.Where[0]), "ILIKE") {
-		t.Fatalf("expected ILIKE in WHERE, got %q", ir.Where[0])
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, strings.ToUpper(ir.Where[0]), "ILIKE", "expected ILIKE in WHERE")
 }
 
 // TestIR_IsNullIsNotNull validates IS NULL and IS NOT NULL predicates together.
@@ -1096,9 +856,8 @@ func TestIR_IsNullIsNotNull(t *testing.T) {
 	sql := `SELECT * FROM orders WHERE shipped_at IS NULL AND cancelled_at IS NOT NULL`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
+
 	whereUpper := strings.ToUpper(ir.Where[0])
 	if !strings.Contains(whereUpper, "IS NULL") {
 		t.Fatalf("expected IS NULL in WHERE, got %q", ir.Where[0])
@@ -1243,9 +1002,7 @@ func TestIR_SelectStarFromMultipleTables(t *testing.T) {
 	sql := `SELECT * FROM users u, orders o WHERE u.id = o.user_id`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Tables) != 2 {
-		t.Fatalf("expected 2 tables, got %d", len(ir.Tables))
-	}
+	require.Len(t, ir.Tables, 2, "expected 2 tables")
 	hasUsers := false
 	hasOrders := false
 	for _, tbl := range ir.Tables {
@@ -1256,12 +1013,8 @@ func TestIR_SelectStarFromMultipleTables(t *testing.T) {
 			hasOrders = true
 		}
 	}
-	if !hasUsers {
-		t.Fatalf("expected users alias u, got %+v", ir.Tables)
-	}
-	if !hasOrders {
-		t.Fatalf("expected orders alias o, got %+v", ir.Tables)
-	}
+	assert.True(t, hasUsers, "expected users alias u")
+	assert.True(t, hasOrders, "expected orders alias o")
 }
 
 // TestIR_NaturalJoin validates NATURAL JOIN table extraction.
@@ -1269,12 +1022,9 @@ func TestIR_NaturalJoin(t *testing.T) {
 	sql := `SELECT * FROM departments NATURAL JOIN employees`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Tables) != 2 {
-		t.Fatalf("expected 2 tables, got %d", len(ir.Tables))
-	}
-	if !containsTable(ir.Tables, "departments") || !containsTable(ir.Tables, "employees") {
-		t.Fatalf("expected departments and employees, got %+v", ir.Tables)
-	}
+	require.Len(t, ir.Tables, 2, "expected 2 tables")
+	assert.True(t, containsTable(ir.Tables, "departments"), "expected departments")
+	assert.True(t, containsTable(ir.Tables, "employees"), "expected employees")
 }
 
 // TestIR_SelfJoin confirms self-join produces two table references with distinct aliases.
@@ -1286,9 +1036,7 @@ LEFT JOIN employees m ON e.manager_id = m.id`
 	ir := parseAssertNoError(t, sql)
 
 	// Self-join results in two references to the same table
-	if len(ir.Tables) != 2 {
-		t.Fatalf("expected 2 tables for self-join, got %d", len(ir.Tables))
-	}
+	require.Len(t, ir.Tables, 2, "expected 2 tables for self-join")
 	hasEmployeeAlias := false
 	hasManagerAlias := false
 	for _, tbl := range ir.Tables {
@@ -1299,12 +1047,8 @@ LEFT JOIN employees m ON e.manager_id = m.id`
 			hasManagerAlias = true
 		}
 	}
-	if !hasEmployeeAlias {
-		t.Fatalf("expected employees alias e, got %+v", ir.Tables)
-	}
-	if !hasManagerAlias {
-		t.Fatalf("expected employees alias m, got %+v", ir.Tables)
-	}
+	assert.True(t, hasEmployeeAlias, "expected employees alias e")
+	assert.True(t, hasManagerAlias, "expected employees alias m")
 }
 
 // TestIR_DerivedColumnsTracking validates alias-to-expression mapping in DerivedColumns.
@@ -1312,15 +1056,9 @@ func TestIR_DerivedColumnsTracking(t *testing.T) {
 	sql := `SELECT COUNT(*) AS total, MAX(price) AS highest FROM orders`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.DerivedColumns) != 2 {
-		t.Fatalf("expected 2 derived columns, got %d: %+v", len(ir.DerivedColumns), ir.DerivedColumns)
-	}
-	if ir.DerivedColumns["total"] != "COUNT(*)" {
-		t.Fatalf("expected 'total' -> 'COUNT(*)', got %q", ir.DerivedColumns["total"])
-	}
-	if ir.DerivedColumns["highest"] != "MAX(price)" {
-		t.Fatalf("expected 'highest' -> 'MAX(price)', got %q", ir.DerivedColumns["highest"])
-	}
+	require.Len(t, ir.DerivedColumns, 2, "expected 2 derived columns")
+	assert.Equal(t, "COUNT(*)", ir.DerivedColumns["total"], "expected 'total' -> 'COUNT(*)'")
+	assert.Equal(t, "MAX(price)", ir.DerivedColumns["highest"], "expected 'highest' -> 'MAX(price)'")
 }
 
 // TestIR_ComplexWhereWithOrAnd verifies compound OR/AND/NOT predicates in WHERE.
@@ -1332,13 +1070,10 @@ WHERE (status = 'active' OR status = 'trial')
   AND NOT deleted`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Where) != 1 {
-		t.Fatalf("expected 1 WHERE clause, got %d", len(ir.Where))
-	}
+	require.Len(t, ir.Where, 1, "expected 1 WHERE clause")
 	whereNorm := normalise(ir.Where[0])
-	if !strings.Contains(whereNorm, "status='active'") || !strings.Contains(whereNorm, "status='trial'") {
-		t.Fatalf("expected OR conditions in WHERE, got %q", ir.Where[0])
-	}
+	assert.Contains(t, whereNorm, "status='active'", "expected OR conditions in WHERE")
+	assert.Contains(t, whereNorm, "status='trial'", "expected OR conditions in WHERE")
 }
 
 // TestIR_InsertWithDefaultValues checks INSERT DEFAULT VALUES with RETURNING.
@@ -1346,15 +1081,9 @@ func TestIR_InsertWithDefaultValues(t *testing.T) {
 	sql := `INSERT INTO counters DEFAULT VALUES RETURNING id`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandInsert {
-		t.Fatalf("expected INSERT, got %s", ir.Command)
-	}
-	if !containsTable(ir.Tables, "counters") {
-		t.Fatalf("expected counters table, got %+v", ir.Tables)
-	}
-	if len(ir.Returning) != 1 {
-		t.Fatalf("expected 1 RETURNING clause, got %+v", ir.Returning)
-	}
+	assert.Equal(t, QueryCommandInsert, ir.Command, "expected INSERT")
+	assert.True(t, containsTable(ir.Tables, "counters"), "expected counters table")
+	require.Len(t, ir.Returning, 1, "expected 1 RETURNING clause")
 }
 
 // TestIR_InsertMultipleValues validates INSERT with multiple VALUES rows.
@@ -1367,12 +1096,8 @@ VALUES ('Alice', 'alice@example.com'),
 RETURNING id`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandInsert {
-		t.Fatalf("expected INSERT, got %s", ir.Command)
-	}
-	if len(ir.InsertColumns) != 2 {
-		t.Fatalf("expected 2 insert columns, got %+v", ir.InsertColumns)
-	}
+	assert.Equal(t, QueryCommandInsert, ir.Command, "expected INSERT")
+	require.Len(t, ir.InsertColumns, 2, "expected 2 insert columns")
 }
 
 // TestIR_ColumnUsageInFilter confirms filter columns are tracked in ColumnUsage.
@@ -1387,9 +1112,7 @@ func TestIR_ColumnUsageInFilter(t *testing.T) {
 			filterUsages++
 		}
 	}
-	if filterUsages == 0 {
-		t.Fatalf("expected filter column usages, got none in %+v", ir.ColumnUsage)
-	}
+	assert.Greater(t, filterUsages, 0, "expected filter column usages")
 }
 
 // TestIR_ColumnUsageInProjection verifies projection columns are tracked in ColumnUsage.
@@ -1403,9 +1126,7 @@ func TestIR_ColumnUsageInProjection(t *testing.T) {
 			projUsages++
 		}
 	}
-	if projUsages == 0 {
-		t.Fatalf("expected projection column usages, got none in %+v", ir.ColumnUsage)
-	}
+	assert.Greater(t, projUsages, 0, "expected projection column usages")
 }
 
 // TestIR_ColumnUsageInGroupBy checks GROUP BY columns are tracked in ColumnUsage.
@@ -1419,9 +1140,7 @@ func TestIR_ColumnUsageInGroupBy(t *testing.T) {
 			groupUsages++
 		}
 	}
-	if groupUsages == 0 {
-		t.Fatalf("expected group column usages, got none in %+v", ir.ColumnUsage)
-	}
+	assert.Greater(t, groupUsages, 0, "expected group column usages")
 }
 
 // TestIR_ColumnUsageInOrderBy validates ORDER BY columns are tracked in ColumnUsage.
@@ -1435,9 +1154,7 @@ func TestIR_ColumnUsageInOrderBy(t *testing.T) {
 			orderUsages++
 		}
 	}
-	if orderUsages == 0 {
-		t.Fatalf("expected order column usages, got none in %+v", ir.ColumnUsage)
-	}
+	assert.Greater(t, orderUsages, 0, "expected order column usages")
 }
 
 // TestIR_ColumnUsageInJoin confirms join columns are tracked in ColumnUsage.
@@ -1451,9 +1168,7 @@ func TestIR_ColumnUsageInJoin(t *testing.T) {
 			joinUsages++
 		}
 	}
-	if joinUsages == 0 {
-		t.Fatalf("expected join column usages, got none in %+v", ir.ColumnUsage)
-	}
+	assert.Greater(t, joinUsages, 0, "expected join column usages")
 }
 
 // TestIR_PositionalParameters verifies $1/$2/$3 positional parameter extraction.
@@ -1461,16 +1176,10 @@ func TestIR_PositionalParameters(t *testing.T) {
 	sql := `SELECT * FROM users WHERE id = $1 AND name = $2 AND age > $3`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Parameters) != 3 {
-		t.Fatalf("expected 3 parameters, got %+v", ir.Parameters)
-	}
+	require.Len(t, ir.Parameters, 3, "expected 3 parameters")
 	for i, param := range ir.Parameters {
-		if param.Position != i+1 {
-			t.Fatalf("expected parameter at position %d, got %+v", i+1, param)
-		}
-		if param.Marker != "$" {
-			t.Fatalf("expected $ marker, got %q", param.Marker)
-		}
+		assert.Equal(t, i+1, param.Position, "expected parameter at position %d", i+1)
+		assert.Equal(t, "$", param.Marker, "expected $ marker")
 	}
 }
 
@@ -1479,15 +1188,11 @@ func TestIR_MixedParameterTypes(t *testing.T) {
 	sql := `SELECT * FROM users WHERE id = $1 AND status = ?`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Parameters) != 2 {
-		t.Fatalf("expected 2 parameters, got %+v", ir.Parameters)
-	}
-	if ir.Parameters[0].Marker != "$" || ir.Parameters[0].Position != 1 {
-		t.Fatalf("unexpected first parameter %+v", ir.Parameters[0])
-	}
-	if ir.Parameters[1].Marker != "?" || ir.Parameters[1].Position != 1 {
-		t.Fatalf("unexpected second parameter %+v", ir.Parameters[1])
-	}
+	require.Len(t, ir.Parameters, 2, "expected 2 parameters")
+	assert.Equal(t, "$", ir.Parameters[0].Marker, "unexpected first parameter marker")
+	assert.Equal(t, 1, ir.Parameters[0].Position, "unexpected first parameter position")
+	assert.Equal(t, "?", ir.Parameters[1].Marker, "unexpected second parameter marker")
+	assert.Equal(t, 1, ir.Parameters[1].Position, "unexpected second parameter position")
 }
 
 // ---------------------------------------------------------------------------
@@ -1497,25 +1202,19 @@ func TestIR_MixedParameterTypes(t *testing.T) {
 // TestIR_EmptyInput validates that empty string input returns an error.
 func TestIR_EmptyInput(t *testing.T) {
 	_, err := ParseSQL("")
-	if err == nil {
-		t.Fatalf("expected error for empty input")
-	}
+	require.Error(t, err, "expected error for empty input")
 }
 
 // TestIR_WhitespaceOnly verifies that whitespace-only input returns an error.
 func TestIR_WhitespaceOnly(t *testing.T) {
 	_, err := ParseSQL("   \n\t  ")
-	if err == nil {
-		t.Fatalf("expected error for whitespace-only input")
-	}
+	require.Error(t, err, "expected error for whitespace-only input")
 }
 
 // TestIR_SemicolonOnly confirms that a bare semicolon returns an error.
 func TestIR_SemicolonOnly(t *testing.T) {
 	_, err := ParseSQL(";")
-	if err == nil {
-		t.Fatalf("expected error for semicolon-only input")
-	}
+	require.Error(t, err, "expected error for semicolon-only input")
 }
 
 // ---------------------------------------------------------------------------
@@ -1525,17 +1224,13 @@ func TestIR_SemicolonOnly(t *testing.T) {
 // TestParseErrors_Error_NilReceiver validates Error() on a nil ParseErrors receiver.
 func TestParseErrors_Error_NilReceiver(t *testing.T) {
 	var pe *ParseErrors
-	if pe.Error() != "parse error" {
-		t.Fatalf("expected 'parse error', got %q", pe.Error())
-	}
+	assert.Equal(t, "parse error", pe.Error(), "expected 'parse error'")
 }
 
 // TestParseErrors_Error_Empty checks Error() with an empty error list.
 func TestParseErrors_Error_Empty(t *testing.T) {
 	pe := &ParseErrors{SQL: "test", Errors: nil}
-	if pe.Error() != "parse error" {
-		t.Fatalf("expected 'parse error', got %q", pe.Error())
-	}
+	assert.Equal(t, "parse error", pe.Error(), "expected 'parse error'")
 }
 
 // TestParseErrors_Error_Single verifies Error() formatting with one syntax error.
@@ -1545,9 +1240,8 @@ func TestParseErrors_Error_Single(t *testing.T) {
 		Errors: []SyntaxError{{Line: 1, Column: 5, Message: "bad token"}},
 	}
 	s := pe.Error()
-	if !strings.Contains(s, "line 1:5") || !strings.Contains(s, "bad token") {
-		t.Fatalf("unexpected error string %q", s)
-	}
+	assert.Contains(t, s, "line 1:5", "unexpected error string")
+	assert.Contains(t, s, "bad token", "unexpected error string")
 }
 
 // TestParseErrors_Error_Multiple confirms Error() formatting with multiple syntax errors.
@@ -1560,12 +1254,9 @@ func TestParseErrors_Error_Multiple(t *testing.T) {
 		},
 	}
 	s := pe.Error()
-	if !strings.Contains(s, "parse error(s)") {
-		t.Fatalf("expected 'parse error(s)', got %q", s)
-	}
-	if !strings.Contains(s, "line 1:5") || !strings.Contains(s, "line 2:3") {
-		t.Fatalf("expected both error locations in %q", s)
-	}
+	assert.Contains(t, s, "parse error(s)", "expected 'parse error(s)'")
+	assert.Contains(t, s, "line 1:5", "expected error location 1")
+	assert.Contains(t, s, "line 2:3", "expected error location 2")
 }
 
 // ---------------------------------------------------------------------------
@@ -1581,19 +1272,11 @@ FROM (
 ) sub`
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.Subqueries) == 0 {
-		t.Fatalf("expected subquery metadata")
-	}
+	require.NotEmpty(t, ir.Subqueries, "expected subquery metadata")
 	sq := ir.Subqueries[0].Query
-	if sq == nil {
-		t.Fatalf("expected parsed subquery")
-	}
-	if sq.Limit == nil {
-		t.Fatalf("expected LIMIT in subquery")
-	}
-	if !sq.Limit.IsNested {
-		t.Fatalf("expected IsNested=true for subquery LIMIT")
-	}
+	require.NotNil(t, sq, "expected parsed subquery")
+	require.NotNil(t, sq.Limit, "expected LIMIT in subquery")
+	assert.True(t, sq.Limit.IsNested, "expected IsNested=true for subquery LIMIT")
 }
 
 // ---------------------------------------------------------------------------
@@ -1635,22 +1318,14 @@ ORDER BY r.month DESC, r.rnk ASC
 LIMIT 50`
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandSelect {
-		t.Fatalf("expected SELECT, got %s", ir.Command)
-	}
-	if len(ir.CTEs) != 2 {
-		t.Fatalf("expected 2 CTEs, got %d", len(ir.CTEs))
-	}
+	assert.Equal(t, QueryCommandSelect, ir.Command, "expected SELECT")
+	require.Len(t, ir.CTEs, 2, "expected 2 CTEs")
+
 	// Check base tables from CTEs are extracted
-	if !containsTable(ir.Tables, "orders") {
-		t.Fatalf("expected orders table from CTE")
-	}
-	if !containsTable(ir.Tables, "order_items") {
-		t.Fatalf("expected order_items table from CTE")
-	}
-	if !containsTable(ir.Tables, "products") {
-		t.Fatalf("expected products table from CTE")
-	}
+	assert.True(t, containsTable(ir.Tables, "orders"), "expected orders table from CTE")
+	assert.True(t, containsTable(ir.Tables, "order_items"), "expected order_items table from CTE")
+	assert.True(t, containsTable(ir.Tables, "products"), "expected products table from CTE")
+
 	// Check main query references ranked CTE
 	foundRanked := false
 	for _, tbl := range ir.Tables {
@@ -1658,22 +1333,15 @@ LIMIT 50`
 			foundRanked = true
 		}
 	}
-	if !foundRanked {
-		t.Fatalf("expected ranked CTE reference")
-	}
+	assert.True(t, foundRanked, "expected ranked CTE reference")
+
 	// Check ORDER BY
-	if len(ir.OrderBy) != 2 {
-		t.Fatalf("expected 2 ORDER BY items, got %d", len(ir.OrderBy))
-	}
+	require.Len(t, ir.OrderBy, 2, "expected 2 ORDER BY items")
+
 	// Check LIMIT
-	if ir.Limit == nil {
-		t.Fatalf("expected LIMIT clause")
-	}
+	require.NotNil(t, ir.Limit, "expected LIMIT clause")
+
 	// Check columns
-	if len(ir.Columns) != 5 {
-		t.Fatalf("expected 5 columns, got %d", len(ir.Columns))
-	}
-	if ir.Columns[4].Alias != "pct_of_month" {
-		t.Fatalf("expected pct_of_month alias, got %q", ir.Columns[4].Alias)
-	}
+	require.Len(t, ir.Columns, 5, "expected 5 columns")
+	assert.Equal(t, "pct_of_month", ir.Columns[4].Alias, "expected pct_of_month alias")
 }

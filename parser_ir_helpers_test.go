@@ -4,18 +4,17 @@ package postgresparser
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // parseAssertNoError parses SQL and fails the test if an error occurs.
 func parseAssertNoError(t *testing.T, sql string) *ParsedQuery {
 	t.Helper()
 	q, err := ParseSQL(sql)
-	if err != nil {
-		t.Fatalf("ParseSQL(%q) returned error: %v", sql, err)
-	}
-	if q == nil {
-		t.Fatalf("ParseSQL(%q) returned nil query", sql)
-	}
+	require.NoError(t, err, "ParseSQL(%q) returned error", sql)
+	require.NotNil(t, q, "ParseSQL(%q) returned nil query", sql)
 	return q
 }
 
@@ -47,10 +46,8 @@ func TestSplitQualifiedName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		schema, name := splitQualifiedName(tt.input)
-		if schema != tt.wantSchema || name != tt.wantName {
-			t.Errorf("splitQualifiedName(%q) = (%q, %q), want (%q, %q)",
-				tt.input, schema, name, tt.wantSchema, tt.wantName)
-		}
+		assert.Equal(t, tt.wantSchema, schema, "schema mismatch for input %q", tt.input)
+		assert.Equal(t, tt.wantName, name, "name mismatch for input %q", tt.input)
 	}
 }
 

@@ -1,14 +1,17 @@
 package postgresparser
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestPreprocessRemovesDoubleSlashComments(t *testing.T) {
 	sql := "SELECT * FROM users // custom meta"
 	cleaned := preprocessSQLInput(sql)
 
-	if cleaned != "SELECT * FROM users" {
-		t.Fatalf("unexpected cleaned SQL %q", cleaned)
-	}
+	assert.Equal(t, "SELECT * FROM users", cleaned, "unexpected cleaned SQL")
 }
 
 func TestPreprocessPreservesUrlLiterals(t *testing.T) {
@@ -16,9 +19,7 @@ func TestPreprocessPreservesUrlLiterals(t *testing.T) {
 	cleaned := preprocessSQLInput(sql)
 
 	expected := "SELECT 'http://example.com' AS url"
-	if cleaned != expected {
-		t.Fatalf("expected %q, got %q", expected, cleaned)
-	}
+	assert.Equal(t, expected, cleaned, "unexpected cleaned SQL")
 }
 
 func TestPreprocessPreservesDollarQuotedString(t *testing.T) {
@@ -26,9 +27,7 @@ func TestPreprocessPreservesDollarQuotedString(t *testing.T) {
 	cleaned := preprocessSQLInput(sql)
 
 	expected := "SELECT $$http://example.com//keep$$ AS url"
-	if cleaned != expected {
-		t.Fatalf("expected %q, got %q", expected, cleaned)
-	}
+	assert.Equal(t, expected, cleaned, "unexpected cleaned SQL")
 }
 
 func TestPreprocessHandlesMultilineDollarQuotedString(t *testing.T) {
@@ -36,41 +35,32 @@ func TestPreprocessHandlesMultilineDollarQuotedString(t *testing.T) {
 	cleaned := preprocessSQLInput(sql)
 
 	expected := "SELECT $$line1\n//not comment\nline3$$ AS body"
-	if cleaned != expected {
-		t.Fatalf("expected %q, got %q", expected, cleaned)
-	}
+	assert.Equal(t, expected, cleaned, "unexpected cleaned SQL")
 }
 
 func TestParseDollarTagValid(t *testing.T) {
 	runes := []rune("$foo$rest")
 	tag, ok := parseDollarTag(runes, 0)
-	if !ok || tag != "foo" {
-		t.Fatalf("expected tag foo, got %q ok=%v", tag, ok)
-	}
+	require.True(t, ok, "expected parse success")
+	assert.Equal(t, "foo", tag, "expected tag 'foo'")
 }
 
 func TestParseDollarTagInvalidChar(t *testing.T) {
 	runes := []rune("$foo-bar$")
-	if tag, ok := parseDollarTag(runes, 0); ok || tag != "" {
-		t.Fatalf("expected failure, got tag=%q ok=%v", tag, ok)
-	}
+	tag, ok := parseDollarTag(runes, 0)
+	assert.False(t, ok, "expected parse failure")
+	assert.Empty(t, tag, "expected empty tag")
 }
 
 func TestHasDollarTerminator(t *testing.T) {
 	runes := []rune("text$foo$rest")
-	if !hasDollarTerminator(runes, 4, "foo") {
-		t.Fatalf("expected terminator to be detected")
-	}
-	if hasDollarTerminator(runes, 4, "bar") {
-		t.Fatalf("expected terminator mismatch")
-	}
+	assert.True(t, hasDollarTerminator(runes, 4, "foo"), "expected terminator to be detected")
+	assert.False(t, hasDollarTerminator(runes, 4, "bar"), "expected terminator mismatch")
 }
 
 func TestPreprocessTrimsWhitespace(t *testing.T) {
 	sql := "  SELECT id FROM users   \n"
 	cleaned := preprocessSQLInput(sql)
 
-	if cleaned != "SELECT id FROM users" {
-		t.Fatalf("expected trimmed SQL, got %q", cleaned)
-	}
+	assert.Equal(t, "SELECT id FROM users", cleaned, "expected trimmed SQL")
 }

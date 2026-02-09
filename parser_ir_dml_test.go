@@ -4,6 +4,9 @@ package postgresparser
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestIR_AdvancedExpressionsAndSetOps exercises UNION chains plus key DML shapes.
@@ -68,12 +71,10 @@ func TestIR_AdvancedExpressionsAndSetOps(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ir := parseAssertNoError(t, tc.sql)
 
-			if ir.Command != tc.expectCmd {
-				t.Fatalf("expected command %s, got %s", tc.expectCmd, ir.Command)
-			}
+			assert.Equal(t, tc.expectCmd, ir.Command, "command mismatch")
 
-			if len(ir.Columns) == 0 && ir.Command == QueryCommandSelect {
-				t.Fatalf("[%s] expected columns to be captured", tc.name)
+			if ir.Command == QueryCommandSelect {
+				assert.NotEmpty(t, ir.Columns, "expected columns to be captured")
 			}
 
 			if ir.Command == QueryCommandUpdate {
@@ -83,37 +84,25 @@ func TestIR_AdvancedExpressionsAndSetOps(t *testing.T) {
 						foundSet = true
 					}
 				}
-				if !foundSet {
-					t.Fatalf("[%s] expected complex SET expression, got %+v", tc.name, ir.SetClauses)
-				}
+				assert.True(t, foundSet, "expected complex SET expression, got %+v", ir.SetClauses)
 			}
 
-			if ir.Command == QueryCommandDelete && len(ir.Returning) == 0 {
-				t.Fatalf("[%s] expected RETURNING clause for DELETE", tc.name)
+			if ir.Command == QueryCommandDelete {
+				assert.NotEmpty(t, ir.Returning, "expected RETURNING clause for DELETE")
 			}
 
 			switch tc.name {
 			case "UNION ALL with nested CASE expression":
-				if len(ir.SetOperations) != 1 {
-					t.Fatalf("expected one set operation, got %+v", ir.SetOperations)
-				}
+				require.Len(t, ir.SetOperations, 1, "expected one set operation")
 				op := ir.SetOperations[0]
-				if op.Type != "UNION ALL" {
-					t.Fatalf("expected UNION ALL type, got %q", op.Type)
-				}
-				if len(op.Columns) != 2 || op.Columns[0] != "id" {
-					t.Fatalf("unexpected union columns %+v", op.Columns)
-				}
-				if !strings.Contains(strings.ToLower(op.Query), "from archived_orders") {
-					t.Fatalf("expected RHS query to reference archived_orders, got %q", op.Query)
-				}
-				if len(op.Tables) != 1 || strings.ToLower(op.Tables[0].Name) != "archived_orders" {
-					t.Fatalf("expected archived_orders table in set operation, got %+v", op.Tables)
-				}
+				assert.Equal(t, "UNION ALL", op.Type, "expected UNION ALL type")
+				require.Len(t, op.Columns, 2, "unexpected union columns")
+				assert.Equal(t, "id", op.Columns[0], "unexpected union columns")
+				assert.Contains(t, strings.ToLower(op.Query), "from archived_orders", "expected RHS query to reference archived_orders")
+				require.Len(t, op.Tables, 1, "expected archived_orders table in set operation")
+				assert.Equal(t, "archived_orders", strings.ToLower(op.Tables[0].Name), "expected archived_orders table")
 			default:
-				if len(ir.SetOperations) != 0 {
-					t.Fatalf("expected no set operations, got %+v", ir.SetOperations)
-				}
+				assert.Empty(t, ir.SetOperations, "expected no set operations")
 			}
 		})
 	}
@@ -171,42 +160,28 @@ RETURNING sessions.id`,
 
 			switch tc.name {
 			case "Example A - Select with parameter":
-				if ir.Command != QueryCommandSelect {
-					t.Fatalf("expected SELECT command, got %s", ir.Command)
-				}
-				if len(ir.Tables) != 1 || ir.Tables[0].Name != "accounts" {
-					t.Fatalf("expected accounts table, got %+v", ir.Tables)
-				}
-				if len(ir.Columns) != 1 || ir.Columns[0].Expression != "*" {
-					t.Fatalf("expected wildcard column, got %+v", ir.Columns)
-				}
-				if len(ir.Where) != 1 || !strings.Contains(normalise(ir.Where[0]), "status=?") {
-					t.Fatalf("expected status predicate in WHERE, got %+v", ir.Where)
-				}
-				if len(ir.Parameters) != 1 || ir.Parameters[0].Raw != "?" || ir.Parameters[0].Position != 1 {
-					t.Fatalf("expected single anonymous parameter, got %+v", ir.Parameters)
-				}
+				assert.Equal(t, QueryCommandSelect, ir.Command, "expected SELECT command")
+				require.Len(t, ir.Tables, 1, "expected 1 table")
+				assert.Equal(t, "accounts", ir.Tables[0].Name, "expected accounts table")
+				require.Len(t, ir.Columns, 1, "expected 1 column")
+				assert.Equal(t, "*", ir.Columns[0].Expression, "expected wildcard column")
+				require.Len(t, ir.Where, 1, "expected WHERE clause")
+				assert.Contains(t, normalise(ir.Where[0]), "status=?", "expected status predicate in WHERE")
+				require.Len(t, ir.Parameters, 1, "expected single anonymous parameter")
+				assert.Equal(t, "?", ir.Parameters[0].Raw, "expected parameter raw value")
+				assert.Equal(t, 1, ir.Parameters[0].Position, "expected parameter position")
 			case "Example B - Join with explicit predicates":
-				if ir.Command != QueryCommandSelect {
-					t.Fatalf("expected SELECT command, got %s", ir.Command)
-				}
-				if len(ir.Tables) != 2 {
-					t.Fatalf("expected two tables, got %+v", ir.Tables)
-				}
-				if ir.Tables[0].Name != "orders" || ir.Tables[1].Name != "customers" {
-					t.Fatalf("unexpected tables %+v", ir.Tables)
-				}
-				if len(ir.JoinConditions) != 1 || !strings.Contains(normalise(ir.JoinConditions[0]), "customers.id=orders.customer_id") {
-					t.Fatalf("expected join predicate on customer id, got %+v", ir.JoinConditions)
-				}
+				assert.Equal(t, QueryCommandSelect, ir.Command, "expected SELECT command")
+				require.Len(t, ir.Tables, 2, "expected two tables")
+				assert.Equal(t, "orders", ir.Tables[0].Name, "unexpected table 1")
+				assert.Equal(t, "customers", ir.Tables[1].Name, "unexpected table 2")
+				require.Len(t, ir.JoinConditions, 1, "expected join predicate")
+				assert.Contains(t, normalise(ir.JoinConditions[0]), "customers.id=orders.customer_id", "expected join predicate")
 			case "Example C - CTE with window and predicate":
-				if len(ir.CTEs) != 1 || strings.ToLower(ir.CTEs[0].Name) != "ranked" {
-					t.Fatalf("expected ranked CTE, got %+v", ir.CTEs)
-				}
+				require.Len(t, ir.CTEs, 1, "expected 1 CTE")
+				assert.Equal(t, "ranked", strings.ToLower(ir.CTEs[0].Name), "expected ranked CTE")
 				// Should now have both the base table "items" and the CTE reference "ranked"
-				if len(ir.Tables) != 2 {
-					t.Fatalf("expected 2 tables (items from CTE and ranked ref), got %d: %+v", len(ir.Tables), ir.Tables)
-				}
+				require.Len(t, ir.Tables, 2, "expected 2 tables (items from CTE and ranked ref)")
 				foundItems := false
 				foundRanked := false
 				for _, tbl := range ir.Tables {
@@ -217,22 +192,14 @@ RETURNING sessions.id`,
 						foundRanked = true
 					}
 				}
-				if !foundItems {
-					t.Fatalf("expected items base table from CTE, tables: %+v", ir.Tables)
-				}
-				if !foundRanked {
-					t.Fatalf("expected ranked CTE reference, tables: %+v", ir.Tables)
-				}
-				if len(ir.Where) != 1 || !strings.Contains(normalise(ir.Where[0]), "r<=10") {
-					t.Fatalf("expected r <= 10 predicate, got %+v", ir.Where)
-				}
+				assert.True(t, foundItems, "expected items base table from CTE")
+				assert.True(t, foundRanked, "expected ranked CTE reference")
+				require.Len(t, ir.Where, 1, "expected WHERE clause")
+				assert.Contains(t, normalise(ir.Where[0]), "r<=10", "expected r <= 10 predicate")
 			case "Example D - Update with returning":
-				if ir.Command != QueryCommandUpdate {
-					t.Fatalf("expected UPDATE command, got %s", ir.Command)
-				}
-				if len(ir.Tables) == 0 || ir.Tables[0].Name != "products" {
-					t.Fatalf("expected products table, got %+v", ir.Tables)
-				}
+				assert.Equal(t, QueryCommandUpdate, ir.Command, "expected UPDATE command")
+				require.Len(t, ir.Tables, 1, "expected products table")
+				assert.Equal(t, "products", ir.Tables[0].Name, "expected products table")
 				foundSet := false
 				for _, clause := range ir.SetClauses {
 					if strings.Contains(normalise(clause), "price=price*1.1") {
@@ -240,16 +207,11 @@ RETURNING sessions.id`,
 						break
 					}
 				}
-				if !foundSet {
-					t.Fatalf("expected price set clause, got %+v", ir.SetClauses)
-				}
-				if len(ir.Returning) != 1 || !strings.Contains(strings.ToUpper(ir.Returning[0]), "RETURNING") {
-					t.Fatalf("expected RETURNING clause, got %+v", ir.Returning)
-				}
+				assert.True(t, foundSet, "expected price set clause")
+				require.Len(t, ir.Returning, 1, "expected RETURNING clause")
+				assert.Contains(t, strings.ToUpper(ir.Returning[0]), "RETURNING", "expected RETURNING clause")
 			case "Example E - Delete using join and returning":
-				if ir.Command != QueryCommandDelete {
-					t.Fatalf("expected DELETE command, got %s", ir.Command)
-				}
+				assert.Equal(t, QueryCommandDelete, ir.Command, "expected DELETE command")
 				hasUsers := false
 				for _, tbl := range ir.Tables {
 					if tbl.Name == "users" {
@@ -257,25 +219,19 @@ RETURNING sessions.id`,
 						break
 					}
 				}
-				if !hasUsers {
-					t.Fatalf("expected users in USING clause, got %+v", ir.Tables)
-				}
-				if len(ir.Returning) != 1 || !strings.Contains(ir.Returning[0], "sessions.id") {
-					t.Fatalf("expected RETURNING sessions.id, got %+v", ir.Returning)
-				}
+				assert.True(t, hasUsers, "expected users in USING clause")
+				require.Len(t, ir.Returning, 1, "expected RETURNING clause")
+				assert.Contains(t, ir.Returning[0], "sessions.id", "expected RETURNING sessions.id")
 			case "Example F - Insert with returning":
-				if ir.Command != QueryCommandInsert {
-					t.Fatalf("expected INSERT command, got %s", ir.Command)
-				}
-				if len(ir.InsertColumns) != 2 || ir.InsertColumns[0] != "id" || ir.InsertColumns[1] != "payload" {
-					t.Fatalf("unexpected insert columns %+v", ir.InsertColumns)
-				}
-				if len(ir.Parameters) != 2 || ir.Parameters[0].Raw != "?" || ir.Parameters[1].Raw != "?" {
-					t.Fatalf("expected two anonymous parameters, got %+v", ir.Parameters)
-				}
-				if len(ir.Returning) != 1 || !strings.Contains(ir.Returning[0], "RETURNING id") {
-					t.Fatalf("expected RETURNING id clause, got %+v", ir.Returning)
-				}
+				assert.Equal(t, QueryCommandInsert, ir.Command, "expected INSERT command")
+				require.Len(t, ir.InsertColumns, 2, "unexpected insert columns count")
+				assert.Equal(t, "id", ir.InsertColumns[0], "unexpected insert column 1")
+				assert.Equal(t, "payload", ir.InsertColumns[1], "unexpected insert column 2")
+				require.Len(t, ir.Parameters, 2, "expected two anonymous parameters")
+				assert.Equal(t, "?", ir.Parameters[0].Raw, "expected parameter 1")
+				assert.Equal(t, "?", ir.Parameters[1].Raw, "expected parameter 2")
+				require.Len(t, ir.Returning, 1, "expected RETURNING clause")
+				assert.Contains(t, ir.Returning[0], "RETURNING id", "expected RETURNING id clause")
 			default:
 				t.Fatalf("unhandled case %q", tc.name)
 			}
@@ -295,27 +251,20 @@ RETURNING id, balance`
 
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandInsert {
-		t.Fatalf("expected INSERT command, got %s", ir.Command)
-	}
-	if len(ir.InsertColumns) != 2 || ir.InsertColumns[0] != "id" || ir.InsertColumns[1] != "balance" {
-		t.Fatalf("unexpected insert columns %+v", ir.InsertColumns)
-	}
-	if ir.Upsert == nil || ir.Upsert.Action != "DO UPDATE" {
-		t.Fatalf("expected DO UPDATE upsert metadata, got %+v", ir.Upsert)
-	}
-	if len(ir.Upsert.TargetColumns) != 1 || ir.Upsert.TargetColumns[0] != "id" {
-		t.Fatalf("unexpected upsert target columns %+v", ir.Upsert.TargetColumns)
-	}
-	if len(ir.Upsert.SetClauses) < 2 {
-		t.Fatalf("expected set clauses for ON CONFLICT, got %+v", ir.Upsert.SetClauses)
-	}
-	if len(ir.Parameters) != 3 || ir.Parameters[0].Position != 1 || ir.Parameters[2].Position != 3 {
-		t.Fatalf("unexpected parameters %+v", ir.Parameters)
-	}
-	if len(ir.Returning) != 1 || !strings.Contains(ir.Returning[0], "RETURNING id, balance") {
-		t.Fatalf("expected RETURNING id, balance clause, got %+v", ir.Returning)
-	}
+	assert.Equal(t, QueryCommandInsert, ir.Command, "expected INSERT command")
+	require.Len(t, ir.InsertColumns, 2, "unexpected insert columns count")
+	assert.Equal(t, "id", ir.InsertColumns[0], "unexpected insert column 1")
+	assert.Equal(t, "balance", ir.InsertColumns[1], "unexpected insert column 2")
+	require.NotNil(t, ir.Upsert, "expected upsert metadata")
+	assert.Equal(t, "DO UPDATE", ir.Upsert.Action, "expected DO UPDATE action")
+	require.Len(t, ir.Upsert.TargetColumns, 1, "unexpected upsert target columns count")
+	assert.Equal(t, "id", ir.Upsert.TargetColumns[0], "unexpected upsert target column")
+	assert.GreaterOrEqual(t, len(ir.Upsert.SetClauses), 2, "expected set clauses for ON CONFLICT")
+	require.Len(t, ir.Parameters, 3, "unexpected parameters count")
+	assert.Equal(t, 1, ir.Parameters[0].Position, "unexpected parameter position")
+	assert.Equal(t, 3, ir.Parameters[2].Position, "unexpected parameter position")
+	require.Len(t, ir.Returning, 1, "expected RETURNING clause")
+	assert.Contains(t, ir.Returning[0], "RETURNING id, balance", "expected RETURNING id, balance clause")
 }
 
 // TestIR_InsertOnConflictDoNothingMetadata verifies DO NOTHING targets/filters.
@@ -327,22 +276,11 @@ ON CONFLICT (id) WHERE is_active = TRUE DO NOTHING`
 
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandInsert {
-		t.Fatalf("expected INSERT command, got %s", ir.Command)
-	}
-	if ir.Upsert == nil {
-		t.Fatalf("expected upsert metadata for DO NOTHING")
-	}
-	if ir.Upsert.Action != "DO NOTHING" {
-		t.Fatalf("expected DO NOTHING action, got %+v", ir.Upsert)
-	}
-	if len(ir.Upsert.TargetColumns) != 1 || ir.Upsert.TargetColumns[0] != "id" {
-		t.Fatalf("unexpected target columns %+v", ir.Upsert.TargetColumns)
-	}
-	if ir.Upsert.TargetWhere == "" || !strings.Contains(ir.Upsert.TargetWhere, "is_active") {
-		t.Fatalf("expected target WHERE clause to capture predicate, got %+v", ir.Upsert.TargetWhere)
-	}
-	if len(ir.Upsert.SetClauses) != 0 {
-		t.Fatalf("expected no set clauses for DO NOTHING, got %+v", ir.Upsert.SetClauses)
-	}
+	assert.Equal(t, QueryCommandInsert, ir.Command, "expected INSERT command")
+	require.NotNil(t, ir.Upsert, "expected upsert metadata")
+	assert.Equal(t, "DO NOTHING", ir.Upsert.Action, "expected DO NOTHING action")
+	require.Len(t, ir.Upsert.TargetColumns, 1, "unexpected target columns count")
+	assert.Equal(t, "id", ir.Upsert.TargetColumns[0], "unexpected target column")
+	assert.Contains(t, ir.Upsert.TargetWhere, "is_active", "expected target WHERE clause to capture predicate")
+	assert.Empty(t, ir.Upsert.SetClauses, "expected no set clauses for DO NOTHING")
 }

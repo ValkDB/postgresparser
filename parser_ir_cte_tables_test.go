@@ -2,6 +2,9 @@ package postgresparser
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestCTETablesExtraction tests that tables referenced inside CTEs are properly extracted
@@ -19,12 +22,8 @@ JOIN expanded e2 ON e2.payload >= e1.payload`
 	ir := parseAssertNoError(t, sql)
 
 	// Check CTEs
-	if len(ir.CTEs) != 1 {
-		t.Fatalf("expected 1 CTE, got %d", len(ir.CTEs))
-	}
-	if ir.CTEs[0].Name != "expanded" {
-		t.Errorf("expected CTE name 'expanded', got %q", ir.CTEs[0].Name)
-	}
+	require.Len(t, ir.CTEs, 1, "expected 1 CTE")
+	assert.Equal(t, "expanded", ir.CTEs[0].Name, "expected CTE name 'expanded'")
 
 	// Check tables
 	// We should have:
@@ -45,13 +44,8 @@ JOIN expanded e2 ON e2.payload >= e1.payload`
 		}
 	}
 
-	if !foundUnindexed {
-		t.Errorf("Expected to find 'slow_smoke.unindexed' as a base table, but it wasn't found. Tables: %+v", ir.Tables)
-	}
-
-	if cteReferences != 2 {
-		t.Errorf("Expected 2 CTE references to 'expanded', got %d", cteReferences)
-	}
+	assert.True(t, foundUnindexed, "Expected to find 'slow_smoke.unindexed' as a base table")
+	assert.Equal(t, 2, cteReferences, "Expected 2 CTE references to 'expanded'")
 }
 
 // TestSimpleCTETablesExtraction tests a simpler case
@@ -71,9 +65,7 @@ SELECT * FROM recent`
 		}
 	}
 
-	if !foundOrders {
-		t.Errorf("Expected to find 'orders' as a base table from inside CTE. Tables: %+v", ir.Tables)
-	}
+	assert.True(t, foundOrders, "Expected to find 'orders' as a base table from inside CTE")
 }
 
 // TestMultipleCTEsWithTables tests multiple CTEs each referencing tables
@@ -101,8 +93,6 @@ SELECT * FROM users_cte JOIN orders_cte ON users_cte.id = orders_cte.user_id`
 	}
 
 	for name, found := range expectedTables {
-		if !found {
-			t.Errorf("Expected to find '%s' as a base table from inside CTEs. All tables: %+v", name, ir.Tables)
-		}
+		assert.True(t, found, "Expected to find '%s' as a base table from inside CTEs", name)
 	}
 }

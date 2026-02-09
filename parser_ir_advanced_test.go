@@ -3,6 +3,9 @@ package postgresparser
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIR_AdvancedSQLConstructs(t *testing.T) {
@@ -21,15 +24,9 @@ func TestIR_AdvancedSQLConstructs(t *testing.T) {
 			  email = EXCLUDED.email;`,
 			expectCmd: QueryCommandInsert,
 			check: func(t *testing.T, ir *ParsedQuery) {
-				if ir.Upsert == nil {
-					t.Fatalf("expected Upsert info for ON CONFLICT DO UPDATE")
-				}
-				if len(ir.Upsert.SetClauses) == 0 {
-					t.Fatalf("expected SetClauses for ON CONFLICT DO UPDATE")
-				}
-				if !strings.Contains(ir.Upsert.SetClauses[0], "name = EXCLUDED.name") {
-					t.Fatalf("unexpected set clause: %s", ir.Upsert.SetClauses[0])
-				}
+				require.NotNil(t, ir.Upsert, "expected Upsert info for ON CONFLICT DO UPDATE")
+				require.NotEmpty(t, ir.Upsert.SetClauses, "expected SetClauses for ON CONFLICT DO UPDATE")
+				assert.Contains(t, ir.Upsert.SetClauses[0], "name = EXCLUDED.name", "unexpected set clause")
 			},
 		},
 		{
@@ -39,12 +36,8 @@ func TestIR_AdvancedSQLConstructs(t *testing.T) {
 			SELECT id, name FROM inactive_users;`,
 			expectCmd: QueryCommandSelect,
 			check: func(t *testing.T, ir *ParsedQuery) {
-				if len(ir.SetOperations) == 0 {
-					t.Fatalf("expected SetOperations for UNION")
-				}
-				if !containsTable(ir.SetOperations[0].Tables, "inactive_users") {
-					t.Fatalf("expected inactive_users in Tables for UNION")
-				}
+				require.NotEmpty(t, ir.SetOperations, "expected SetOperations for UNION")
+				assert.True(t, containsTable(ir.SetOperations[0].Tables, "inactive_users"), "expected inactive_users in Tables for UNION")
 			},
 		},
 		{
@@ -54,12 +47,8 @@ func TestIR_AdvancedSQLConstructs(t *testing.T) {
 			SELECT product_id FROM in_store_purchases;`,
 			expectCmd: QueryCommandSelect,
 			check: func(t *testing.T, ir *ParsedQuery) {
-				if len(ir.SetOperations) == 0 {
-					t.Fatalf("expected SetOperations for INTERSECT")
-				}
-				if !containsTable(ir.SetOperations[0].Tables, "in_store_purchases") {
-					t.Fatalf("expected in_store_purchases in Tables for INTERSECT")
-				}
+				require.NotEmpty(t, ir.SetOperations, "expected SetOperations for INTERSECT")
+				assert.True(t, containsTable(ir.SetOperations[0].Tables, "in_store_purchases"), "expected in_store_purchases in Tables for INTERSECT")
 			},
 		},
 		{
@@ -69,12 +58,8 @@ func TestIR_AdvancedSQLConstructs(t *testing.T) {
 			SELECT customer_id FROM recent_buyers;`,
 			expectCmd: QueryCommandSelect,
 			check: func(t *testing.T, ir *ParsedQuery) {
-				if len(ir.SetOperations) == 0 {
-					t.Fatalf("expected SetOperations for EXCEPT")
-				}
-				if !containsTable(ir.SetOperations[0].Tables, "recent_buyers") {
-					t.Fatalf("expected recent_buyers in Tables for EXCEPT")
-				}
+				require.NotEmpty(t, ir.SetOperations, "expected SetOperations for EXCEPT")
+				assert.True(t, containsTable(ir.SetOperations[0].Tables, "recent_buyers"), "expected recent_buyers in Tables for EXCEPT")
 			},
 		},
 		{
@@ -88,12 +73,8 @@ func TestIR_AdvancedSQLConstructs(t *testing.T) {
 			);`,
 			expectCmd: QueryCommandSelect,
 			check: func(t *testing.T, ir *ParsedQuery) {
-				if len(ir.Where) == 0 {
-					t.Fatalf("expected WHERE clause for EXISTS")
-				}
-				if !strings.Contains(ir.Where[0], "EXISTS") {
-					t.Fatalf("unexpected WHERE clause: %s", ir.Where[0])
-				}
+				require.NotEmpty(t, ir.Where, "expected WHERE clause for EXISTS")
+				assert.True(t, strings.Contains(ir.Where[0], "EXISTS"), "unexpected WHERE clause: %s", ir.Where[0])
 			},
 		},
 		{
@@ -104,12 +85,8 @@ func TestIR_AdvancedSQLConstructs(t *testing.T) {
 			WHERE order_total > 1000;`,
 			expectCmd: QueryCommandInsert,
 			check: func(t *testing.T, ir *ParsedQuery) {
-				if !containsTable(ir.Tables, "high_value_orders") {
-					t.Fatalf("expected high_value_orders table for INSERT ... SELECT")
-				}
-				if len(ir.InsertColumns) != 3 {
-					t.Fatalf("expected 3 insert columns for INSERT ... SELECT")
-				}
+				assert.True(t, containsTable(ir.Tables, "high_value_orders"), "expected high_value_orders table for INSERT ... SELECT")
+				assert.Len(t, ir.InsertColumns, 3, "expected 3 insert columns for INSERT ... SELECT")
 			},
 		},
 		{
@@ -119,9 +96,7 @@ func TestIR_AdvancedSQLConstructs(t *testing.T) {
 			RIGHT JOIN purchases p ON u.id = p.user_id;`,
 			expectCmd: QueryCommandSelect,
 			check: func(t *testing.T, ir *ParsedQuery) {
-				if len(ir.Tables) < 2 {
-					t.Fatalf("expected at least 2 tables for RIGHT JOIN")
-				}
+				assert.GreaterOrEqual(t, len(ir.Tables), 2, "expected at least 2 tables for RIGHT JOIN")
 			},
 		},
 		{
@@ -131,9 +106,7 @@ func TestIR_AdvancedSQLConstructs(t *testing.T) {
 			FULL OUTER JOIN employees e ON d.id = e.department_id;`,
 			expectCmd: QueryCommandSelect,
 			check: func(t *testing.T, ir *ParsedQuery) {
-				if len(ir.Tables) < 2 {
-					t.Fatalf("expected at least 2 tables for FULL OUTER JOIN")
-				}
+				assert.GreaterOrEqual(t, len(ir.Tables), 2, "expected at least 2 tables for FULL OUTER JOIN")
 			},
 		},
 	}
@@ -142,9 +115,7 @@ func TestIR_AdvancedSQLConstructs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ir := parseAssertNoError(t, tc.sql)
 
-			if ir.Command != tc.expectCmd {
-				t.Fatalf("expected command %s, got %s", tc.expectCmd, ir.Command)
-			}
+			assert.Equal(t, tc.expectCmd, ir.Command, "command mismatch")
 
 			if tc.check != nil {
 				tc.check(t, ir)

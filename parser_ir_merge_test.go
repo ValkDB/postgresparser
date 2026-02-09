@@ -4,6 +4,9 @@ package postgresparser
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestIR_MergeStatement validates MERGE target/source and action capture.
@@ -21,51 +24,45 @@ WHEN MATCHED THEN DELETE;`
 
 	ir := parseAssertNoError(t, sql)
 
-	if ir.Command != QueryCommandMerge {
-		t.Fatalf("expected MERGE command, got %s", ir.Command)
-	}
-	if ir.Merge == nil {
-		t.Fatalf("expected merge metadata, got nil")
-	}
-	if strings.ToLower(ir.Merge.Target.Name) != "customers" || ir.Merge.Target.Alias != "c" {
-		t.Fatalf("unexpected merge target %+v", ir.Merge.Target)
-	}
-	if ir.Merge.Source.Table.Type != TableTypeSubquery || ir.Merge.Source.Table.Alias != "s" {
-		t.Fatalf("expected subquery source, got %+v", ir.Merge.Source.Table)
-	}
-	if !containsTable(ir.Tables, "customers") || !containsTable(ir.Tables, "summary") {
-		t.Fatalf("expected merge tables to include customers and summary %+v", ir.Tables)
-	}
-	if !strings.Contains(ir.Merge.Condition, "c.id = s.customer_id") {
-		t.Fatalf("unexpected merge condition %q", ir.Merge.Condition)
-	}
-	if len(ir.Merge.Actions) != 3 {
-		t.Fatalf("expected three merge actions, got %+v", ir.Merge.Actions)
-	}
-	if ir.Merge.Actions[0].Type != "UPDATE" || !strings.Contains(ir.Merge.Actions[0].Condition, "total_spent > 1000") {
-		t.Fatalf("unexpected update action %+v", ir.Merge.Actions[0])
-	}
-	if len(ir.Merge.Actions[0].SetClauses) != 1 || !strings.Contains(ir.Merge.Actions[0].SetClauses[0], "vip = true") {
-		t.Fatalf("unexpected update set clauses %+v", ir.Merge.Actions[0].SetClauses)
-	}
-	if ir.Merge.Actions[1].Type != "INSERT" || len(ir.Merge.Actions[1].InsertColumns) != 2 {
-		t.Fatalf("unexpected insert action %+v", ir.Merge.Actions[1])
-	}
-	if !strings.Contains(ir.Merge.Actions[1].InsertValues, "VALUES (s.customer_id, s.total_spent)") {
-		t.Fatalf("unexpected insert values %+v", ir.Merge.Actions[1].InsertValues)
-	}
-	if ir.Merge.Actions[2].Type != "DELETE" {
-		t.Fatalf("expected delete action, got %+v", ir.Merge.Actions[2])
-	}
-	if len(ir.SetClauses) == 0 || !strings.Contains(ir.SetClauses[0], "vip = true") {
-		t.Fatalf("expected merge set clauses to be recorded, got %+v", ir.SetClauses)
-	}
-	if len(ir.Subqueries) == 0 || strings.ToLower(ir.Subqueries[0].Alias) != "s" {
-		t.Fatalf("expected merge source subquery metadata %+v", ir.Subqueries)
-	}
-	if ir.Subqueries[0].Query == nil || !containsTable(ir.Subqueries[0].Query.Tables, "summary") {
-		t.Fatalf("expected subquery to capture summary table %+v", ir.Subqueries[0])
-	}
+	assert.Equal(t, QueryCommandMerge, ir.Command, "expected MERGE command")
+	require.NotNil(t, ir.Merge, "expected merge metadata")
+
+	assert.Equal(t, "customers", strings.ToLower(ir.Merge.Target.Name), "unexpected merge target name")
+	assert.Equal(t, "c", ir.Merge.Target.Alias, "unexpected merge target alias")
+
+	assert.Equal(t, TableTypeSubquery, ir.Merge.Source.Table.Type, "expected subquery source type")
+	assert.Equal(t, "s", ir.Merge.Source.Table.Alias, "expected subquery source alias")
+
+	assert.True(t, containsTable(ir.Tables, "customers"), "expected merge tables to include customers")
+	assert.True(t, containsTable(ir.Tables, "summary"), "expected merge tables to include summary")
+
+	assert.Contains(t, ir.Merge.Condition, "c.id = s.customer_id", "unexpected merge condition")
+
+	require.Len(t, ir.Merge.Actions, 3, "expected three merge actions")
+
+	// Action 1: UPDATE
+	assert.Equal(t, "UPDATE", ir.Merge.Actions[0].Type, "unexpected update action type")
+	assert.Contains(t, ir.Merge.Actions[0].Condition, "total_spent > 1000", "unexpected update condition")
+	require.Len(t, ir.Merge.Actions[0].SetClauses, 1, "unexpected update set clauses count")
+	assert.Contains(t, ir.Merge.Actions[0].SetClauses[0], "vip = true", "unexpected update set clause")
+
+	// Action 2: INSERT
+	assert.Equal(t, "INSERT", ir.Merge.Actions[1].Type, "unexpected insert action type")
+	assert.Len(t, ir.Merge.Actions[1].InsertColumns, 2, "unexpected insert columns count")
+	assert.Contains(t, ir.Merge.Actions[1].InsertValues, "VALUES (s.customer_id, s.total_spent)", "unexpected insert values")
+
+	// Action 3: DELETE
+	assert.Equal(t, "DELETE", ir.Merge.Actions[2].Type, "expected delete action")
+
+	// Check top-level IR SetClauses (should aggregate from actions)
+	require.NotEmpty(t, ir.SetClauses, "expected merge set clauses to be recorded")
+	assert.Contains(t, ir.SetClauses[0], "vip = true", "expected aggregated set clause")
+
+	// Check Subqueries metadata
+	require.NotEmpty(t, ir.Subqueries, "expected merge source subquery metadata")
+	assert.Equal(t, "s", strings.ToLower(ir.Subqueries[0].Alias), "expected subquery alias 's'")
+	require.NotNil(t, ir.Subqueries[0].Query, "expected parsed subquery")
+	assert.True(t, containsTable(ir.Subqueries[0].Query.Tables, "summary"), "expected subquery to capture summary table")
 }
 
 // TestExtractDeleteConditionFromText verifies the text-based condition extraction for
@@ -84,9 +81,7 @@ func TestExtractDeleteConditionFromText(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got := extractDeleteConditionFromText(tt.input)
-		if got != tt.want {
-			t.Errorf("extractDeleteConditionFromText(%q) = %q, want %q", tt.input, got, tt.want)
-		}
+		assert.Equal(t, tt.want, got, "extractDeleteConditionFromText(%q)", tt.input)
 	}
 }
 
@@ -103,9 +98,9 @@ JOIN (
 
 	ir := parseAssertNoError(t, sql)
 
-	if !containsTable(ir.Tables, "tenants") || !containsTable(ir.Tables, "invoices") {
-		t.Fatalf("expected tenants and invoices tables %+v", ir.Tables)
-	}
+	assert.True(t, containsTable(ir.Tables, "tenants"), "expected tenants table")
+	assert.True(t, containsTable(ir.Tables, "invoices"), "expected invoices table")
+
 	foundSubquery := false
 	for _, tbl := range ir.Tables {
 		if tbl.Type == TableTypeSubquery && strings.ToLower(tbl.Alias) == "sq" {
@@ -113,12 +108,10 @@ JOIN (
 			break
 		}
 	}
-	if !foundSubquery {
-		t.Fatalf("expected subquery table reference in %+v", ir.Tables)
-	}
-	if len(ir.Subqueries) == 0 {
-		t.Fatalf("expected subquery metadata, got none")
-	}
+	assert.True(t, foundSubquery, "expected subquery table reference in tables list")
+
+	require.NotEmpty(t, ir.Subqueries, "expected subquery metadata")
+
 	var sq *SubqueryRef
 	for i := range ir.Subqueries {
 		if strings.ToLower(ir.Subqueries[i].Alias) == "sq" {
@@ -126,13 +119,10 @@ JOIN (
 			break
 		}
 	}
-	if sq == nil || sq.Query == nil {
-		t.Fatalf("expected parsed subquery metadata %+v", ir.Subqueries)
-	}
-	if !containsTable(sq.Query.Tables, "invoices") {
-		t.Fatalf("expected subquery to reference invoices, got %+v", sq.Query.Tables)
-	}
-	if len(sq.Query.GroupBy) == 0 || !strings.Contains(strings.ToLower(sq.Query.GroupBy[0]), "tenant_id") {
-		t.Fatalf("expected subquery group by metadata, got %+v", sq.Query.GroupBy)
-	}
+	require.NotNil(t, sq, "expected subquery ref 'sq'")
+	require.NotNil(t, sq.Query, "expected parsed subquery")
+
+	assert.True(t, containsTable(sq.Query.Tables, "invoices"), "expected subquery to reference invoices")
+	require.NotEmpty(t, sq.Query.GroupBy, "expected subquery group by metadata")
+	assert.Contains(t, strings.ToLower(sq.Query.GroupBy[0]), "tenant_id", "expected group by tenant_id")
 }

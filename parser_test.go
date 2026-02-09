@@ -3,35 +3,27 @@ package postgresparser
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseSQLSimpleSelect(t *testing.T) {
 	sql := "SELECT id, name FROM users WHERE status = ?;"
 	pq, err := ParseSQL(sql)
-	if err != nil {
-		t.Fatalf("ParseSQL returned error: %v", err)
-	}
-	if pq.Command != QueryCommandSelect {
-		t.Fatalf("expected command SELECT, got %s", pq.Command)
-	}
-	if len(pq.Columns) != 2 {
-		t.Fatalf("expected 2 columns, got %d", len(pq.Columns))
-	}
-	if pq.Columns[0].Expression != "id" || pq.Columns[1].Expression != "name" {
-		t.Fatalf("unexpected columns %+v", pq.Columns)
-	}
-	if len(pq.Tables) != 1 {
-		t.Fatalf("expected 1 table, got %d", len(pq.Tables))
-	}
-	if pq.Tables[0].Name != "users" || pq.Tables[0].Type != TableTypeBase {
-		t.Fatalf("unexpected table %+v", pq.Tables[0])
-	}
-	if len(pq.Where) != 1 || normalise(pq.Where[0]) != "status=?" {
-		t.Fatalf("unexpected WHERE clause %v", pq.Where)
-	}
-	if len(pq.Parameters) != 1 || pq.Parameters[0].Raw != "?" || pq.Parameters[0].Position != 1 {
-		t.Fatalf("unexpected parameters %+v", pq.Parameters)
-	}
+	require.NoError(t, err, "ParseSQL returned error")
+	assert.Equal(t, QueryCommandSelect, pq.Command, "expected command SELECT")
+	require.Len(t, pq.Columns, 2, "expected 2 columns")
+	assert.Equal(t, "id", pq.Columns[0].Expression, "unexpected column 1")
+	assert.Equal(t, "name", pq.Columns[1].Expression, "unexpected column 2")
+	require.Len(t, pq.Tables, 1, "expected 1 table")
+	assert.Equal(t, "users", pq.Tables[0].Name, "unexpected table name")
+	assert.Equal(t, TableTypeBase, pq.Tables[0].Type, "unexpected table type")
+	require.Len(t, pq.Where, 1, "expected 1 WHERE clause")
+	assert.Equal(t, "status=?", normalise(pq.Where[0]), "unexpected WHERE clause")
+	require.Len(t, pq.Parameters, 1, "expected 1 parameter")
+	assert.Equal(t, "?", pq.Parameters[0].Raw, "unexpected parameter raw")
+	assert.Equal(t, 1, pq.Parameters[0].Position, "unexpected parameter position")
 }
 
 func TestParseSQLJoinWithAlias(t *testing.T) {
@@ -42,27 +34,24 @@ JOIN customers c ON o.customer_id = c.id
 WHERE o.created_at > $1 AND c.active = true;`
 
 	pq, err := ParseSQL(sql)
-	if err != nil {
-		t.Fatalf("ParseSQL returned error: %v", err)
-	}
-	if len(pq.Tables) != 2 {
-		t.Fatalf("expected 2 tables, got %d", len(pq.Tables))
-	}
-	if pq.Tables[0].Name != "orders" || pq.Tables[0].Alias != "o" {
-		t.Fatalf("unexpected first table %+v", pq.Tables[0])
-	}
-	if pq.Tables[1].Name != "customers" || pq.Tables[1].Alias != "c" {
-		t.Fatalf("unexpected second table %+v", pq.Tables[1])
-	}
-	if len(pq.JoinConditions) == 0 || !strings.Contains(normalise(pq.JoinConditions[0]), "o.customer_id=c.id") {
-		t.Fatalf("expected join condition, got %v", pq.JoinConditions)
-	}
-	if len(pq.Where) != 1 || !strings.Contains(normalise(pq.Where[0]), "o.created_at>$1") {
-		t.Fatalf("unexpected WHERE clause %v", pq.Where)
-	}
-	if len(pq.Parameters) != 1 || pq.Parameters[0].Raw != "$1" || pq.Parameters[0].Position != 1 {
-		t.Fatalf("unexpected parameters %+v", pq.Parameters)
-	}
+	require.NoError(t, err, "ParseSQL returned error")
+	require.Len(t, pq.Tables, 2, "expected 2 tables")
+
+	assert.Equal(t, "orders", pq.Tables[0].Name, "unexpected first table name")
+	assert.Equal(t, "o", pq.Tables[0].Alias, "unexpected first table alias")
+
+	assert.Equal(t, "customers", pq.Tables[1].Name, "unexpected second table name")
+	assert.Equal(t, "c", pq.Tables[1].Alias, "unexpected second table alias")
+
+	require.NotEmpty(t, pq.JoinConditions, "expected join condition")
+	assert.Contains(t, normalise(pq.JoinConditions[0]), "o.customer_id=c.id", "expected join condition content")
+
+	require.Len(t, pq.Where, 1, "expected 1 WHERE clause")
+	assert.Contains(t, normalise(pq.Where[0]), "o.created_at>$1", "unexpected WHERE clause")
+
+	require.Len(t, pq.Parameters, 1, "expected 1 parameter")
+	assert.Equal(t, "$1", pq.Parameters[0].Raw, "unexpected parameter raw")
+	assert.Equal(t, 1, pq.Parameters[0].Position, "unexpected parameter position")
 }
 
 func TestParseSQLWithCTE(t *testing.T) {
@@ -77,19 +66,13 @@ FROM ranked r
 WHERE r.seq <= 5;`
 
 	pq, err := ParseSQL(sql)
-	if err != nil {
-		t.Fatalf("ParseSQL returned error: %v", err)
-	}
-	if len(pq.CTEs) != 1 {
-		t.Fatalf("expected 1 CTE, got %d", len(pq.CTEs))
-	}
-	if strings.ToLower(pq.CTEs[0].Name) != "ranked" {
-		t.Fatalf("unexpected CTE %+v", pq.CTEs[0])
-	}
+	require.NoError(t, err, "ParseSQL returned error")
+	require.Len(t, pq.CTEs, 1, "expected 1 CTE")
+	assert.Equal(t, "ranked", strings.ToLower(pq.CTEs[0].Name), "unexpected CTE name")
+
 	// Should now have both the base table "orders" from the CTE and the CTE reference "ranked"
-	if len(pq.Tables) != 2 {
-		t.Fatalf("expected 2 tables (orders from CTE and ranked ref), got %d: %+v", len(pq.Tables), pq.Tables)
-	}
+	require.Len(t, pq.Tables, 2, "expected 2 tables (orders from CTE and ranked ref)")
+
 	foundOrders := false
 	foundRanked := false
 	for _, tbl := range pq.Tables {
@@ -100,18 +83,14 @@ WHERE r.seq <= 5;`
 			foundRanked = true
 		}
 	}
-	if !foundOrders {
-		t.Fatalf("expected orders base table from CTE, tables: %+v", pq.Tables)
-	}
-	if !foundRanked {
-		t.Fatalf("expected ranked CTE reference, tables: %+v", pq.Tables)
-	}
-	if len(pq.Where) != 1 || normalise(pq.Where[0]) != "r.seq<=5" {
-		t.Fatalf("unexpected WHERE clause %v", pq.Where)
-	}
-	if len(pq.Parameters) != 1 || pq.Parameters[0].Raw != "?" {
-		t.Fatalf("unexpected parameters %+v", pq.Parameters)
-	}
+	assert.True(t, foundOrders, "expected orders base table from CTE")
+	assert.True(t, foundRanked, "expected ranked CTE reference")
+
+	require.Len(t, pq.Where, 1, "expected 1 WHERE clause")
+	assert.Equal(t, "r.seq<=5", normalise(pq.Where[0]), "unexpected WHERE clause")
+
+	require.Len(t, pq.Parameters, 1, "expected 1 parameter")
+	assert.Equal(t, "?", pq.Parameters[0].Raw, "unexpected parameter raw")
 }
 
 func TestParseSQLGroupOrderLimit(t *testing.T) {
@@ -125,24 +104,21 @@ ORDER BY cnt DESC NULLS LAST
 LIMIT 10 OFFSET 2;`
 
 	pq, err := ParseSQL(sql)
-	if err != nil {
-		t.Fatalf("ParseSQL returned error: %v", err)
-	}
-	if len(pq.GroupBy) != 1 || pq.GroupBy[0] != "tenant" {
-		t.Fatalf("unexpected GROUP BY %v", pq.GroupBy)
-	}
-	if len(pq.Having) != 1 || !strings.Contains(normalise(pq.Having[0]), "count(*)>5") {
-		t.Fatalf("unexpected HAVING %v", pq.Having)
-	}
-	if len(pq.OrderBy) != 1 || strings.ToUpper(pq.OrderBy[0].Direction) != "DESC" || strings.ToUpper(pq.OrderBy[0].Nulls) != "NULLS LAST" {
-		t.Fatalf("unexpected ORDER BY %+v", pq.OrderBy)
-	}
-	if pq.Limit == nil || !strings.Contains(strings.ToUpper(pq.Limit.Limit), "LIMIT") {
-		t.Fatalf("expected LIMIT clause, got %+v", pq.Limit)
-	}
-	if pq.Limit.Offset == "" || !strings.Contains(strings.ToUpper(pq.Limit.Offset), "OFFSET") {
-		t.Fatalf("expected OFFSET clause, got %+v", pq.Limit)
-	}
+	require.NoError(t, err, "ParseSQL returned error")
+
+	require.Len(t, pq.GroupBy, 1, "expected 1 GROUP BY")
+	assert.Equal(t, "tenant", pq.GroupBy[0], "unexpected GROUP BY")
+
+	require.Len(t, pq.Having, 1, "expected 1 HAVING")
+	assert.Contains(t, normalise(pq.Having[0]), "count(*)>5", "unexpected HAVING")
+
+	require.Len(t, pq.OrderBy, 1, "expected 1 ORDER BY")
+	assert.Equal(t, "DESC", strings.ToUpper(pq.OrderBy[0].Direction), "unexpected ORDER BY direction")
+	assert.Equal(t, "NULLS LAST", strings.ToUpper(pq.OrderBy[0].Nulls), "unexpected ORDER BY nulls")
+
+	require.NotNil(t, pq.Limit, "expected LIMIT clause")
+	assert.Contains(t, strings.ToUpper(pq.Limit.Limit), "LIMIT", "expected LIMIT clause content")
+	assert.Contains(t, strings.ToUpper(pq.Limit.Offset), "OFFSET", "expected OFFSET clause content")
 }
 
 func TestParseSQLFunctionAndSubqueryTables(t *testing.T) {
@@ -152,9 +128,8 @@ FROM (SELECT id FROM accounts) sub
 CROSS JOIN LATERAL unnest($1) AS ids(id);`
 
 	pq, err := ParseSQL(sql)
-	if err != nil {
-		t.Fatalf("ParseSQL returned error: %v", err)
-	}
+	require.NoError(t, err, "ParseSQL returned error")
+
 	var foundSubquery, foundFunction, foundBase bool
 	for _, tbl := range pq.Tables {
 		switch tbl.Type {
@@ -172,18 +147,10 @@ CROSS JOIN LATERAL unnest($1) AS ids(id);`
 			}
 		}
 	}
-	if !foundSubquery {
-		t.Fatalf("expected subquery table reference in %+v", pq.Tables)
-	}
-	if !foundFunction {
-		t.Fatalf("expected function table reference in %+v", pq.Tables)
-	}
-	if !foundBase {
-		t.Fatalf("expected base accounts table to be surfaced in %+v", pq.Tables)
-	}
-	if len(pq.Parameters) != 1 || pq.Parameters[0].Raw != "$1" {
-		t.Fatalf("unexpected parameters %+v", pq.Parameters)
-	}
-}
+	assert.True(t, foundSubquery, "expected subquery table reference")
+	assert.True(t, foundFunction, "expected function table reference")
+	assert.True(t, foundBase, "expected base accounts table to be surfaced")
 
-// normalise strips whitespace and lowercases a string for comparison.
+	require.Len(t, pq.Parameters, 1, "expected 1 parameter")
+	assert.Equal(t, "$1", pq.Parameters[0].Raw, "unexpected parameter raw")
+}

@@ -4,6 +4,9 @@ package postgresparser
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestIR_SetOperationsMetadata checks multi-branch set-ops are captured in order.
@@ -22,40 +25,27 @@ FROM banned_users;`
 
 	ir := parseAssertNoError(t, sql)
 
-	if len(ir.SetOperations) != 2 {
-		t.Fatalf("expected two set operations, got %+v", ir.SetOperations)
-	}
+	require.Len(t, ir.SetOperations, 2, "expected two set operations")
 
 	first := ir.SetOperations[0]
-	if first.Type != "INTERSECT" {
-		t.Fatalf("expected first operation INTERSECT, got %q", first.Type)
-	}
-	if len(first.Columns) != 1 || first.Columns[0] != "user_id" {
-		t.Fatalf("unexpected INTERSECT columns %+v", first.Columns)
-	}
-	if !strings.Contains(strings.ToLower(first.Query), "from payments") {
-		t.Fatalf("expected INTERSECT query to contain payments, got %q", first.Query)
-	}
-	if len(first.Tables) != 1 || strings.ToLower(first.Tables[0].Name) != "payments" {
-		t.Fatalf("expected payments table captured for INTERSECT, got %+v", first.Tables)
-	}
+	assert.Equal(t, "INTERSECT", first.Type, "expected first operation INTERSECT")
+	require.Len(t, first.Columns, 1, "unexpected INTERSECT columns count")
+	assert.Equal(t, "user_id", first.Columns[0], "unexpected INTERSECT column")
+	assert.Contains(t, strings.ToLower(first.Query), "from payments", "expected INTERSECT query to contain payments")
+	require.Len(t, first.Tables, 1, "expected payments table captured for INTERSECT")
+	assert.Equal(t, "payments", strings.ToLower(first.Tables[0].Name), "expected payments table captured for INTERSECT")
 
 	second := ir.SetOperations[1]
-	if second.Type != "EXCEPT ALL" {
-		t.Fatalf("expected second operation EXCEPT ALL, got %q", second.Type)
-	}
-	if len(second.Columns) != 1 || second.Columns[0] != "user_id" {
-		t.Fatalf("unexpected EXCEPT columns %+v", second.Columns)
-	}
-	if !strings.Contains(strings.ToLower(second.Query), "from banned_users") {
-		t.Fatalf("expected EXCEPT query to contain banned_users, got %q", second.Query)
-	}
-	if len(second.Tables) != 1 || strings.ToLower(second.Tables[0].Name) != "banned_users" {
-		t.Fatalf("expected banned_users table captured for EXCEPT, got %+v", second.Tables)
-	}
-	if !containsTable(ir.Tables, "logins") || !containsTable(ir.Tables, "payments") || !containsTable(ir.Tables, "banned_users") {
-		t.Fatalf("expected all set-operation tables surfaced at top level, got %+v", ir.Tables)
-	}
+	assert.Equal(t, "EXCEPT ALL", second.Type, "expected second operation EXCEPT ALL")
+	require.Len(t, second.Columns, 1, "unexpected EXCEPT columns count")
+	assert.Equal(t, "user_id", second.Columns[0], "unexpected EXCEPT column")
+	assert.Contains(t, strings.ToLower(second.Query), "from banned_users", "expected EXCEPT query to contain banned_users")
+	require.Len(t, second.Tables, 1, "expected banned_users table captured for EXCEPT")
+	assert.Equal(t, "banned_users", strings.ToLower(second.Tables[0].Name), "expected banned_users table captured for EXCEPT")
+
+	assert.True(t, containsTable(ir.Tables, "logins"), "expected logins table in top level")
+	assert.True(t, containsTable(ir.Tables, "payments"), "expected payments table in top level")
+	assert.True(t, containsTable(ir.Tables, "banned_users"), "expected banned_users table in top level")
 }
 
 // TestIR_SetOperationTableDriven sanity-checks table capture across common set ops.
@@ -99,14 +89,10 @@ SELECT user_id FROM revoked_permissions`,
 		t.Run(tc.name, func(t *testing.T) {
 			ir := parseAssertNoError(t, tc.sql)
 
-			if len(ir.SetOperations) == 0 {
-				t.Fatalf("expected set operations metadata, got none")
-			}
+			require.NotEmpty(t, ir.SetOperations, "expected set operations metadata")
 
 			for _, tbl := range tc.expectedTables {
-				if !containsTable(ir.Tables, tbl) {
-					t.Fatalf("expected table %q in top-level tables %+v", tbl, ir.Tables)
-				}
+				assert.True(t, containsTable(ir.Tables, tbl), "expected table %q in top-level tables", tbl)
 			}
 
 			for _, tbl := range tc.expectedOpTables {
@@ -117,9 +103,7 @@ SELECT user_id FROM revoked_permissions`,
 						break
 					}
 				}
-				if !found {
-					t.Fatalf("expected table %q in set operations %+v", tbl, ir.SetOperations)
-				}
+				assert.True(t, found, "expected table %q in set operations", tbl)
 			}
 		})
 	}
