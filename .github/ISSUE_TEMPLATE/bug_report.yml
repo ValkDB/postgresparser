@@ -1,0 +1,74 @@
+name: Bug Report
+description: Report incorrect parsing, missing data, or unexpected errors
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! A minimal SQL example helps us fix it fast.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: sql-input
+    attributes:
+      label: SQL input
+      description: The SQL statement that triggers the bug. Minimal repro preferred.
+      render: sql
+      placeholder: "SELECT * FROM users WHERE id = $1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-output
+    attributes:
+      label: Actual output
+      description: What did `ParseSQL` or `AnalyzeSQL` return? Include the relevant struct fields or error message.
+      render: go
+      placeholder: |
+        // e.g.
+        result.Command  // "UNKNOWN" (expected "SELECT")
+        result.Tables   // [] (expected [{Name: "users"}])
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-output
+    attributes:
+      label: Expected output
+      description: What should the parser have returned?
+      render: go
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: postgresparser version
+      description: "Output of `go list -m github.com/valkdb/postgresparser`"
+      placeholder: "v1.1.0"
+    validations:
+      required: false
+
+  - type: input
+    id: pg-version
+    attributes:
+      label: PostgreSQL version (if relevant)
+      description: The PostgreSQL version the SQL targets
+      placeholder: "16.2"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Go version, OS, related issues, workarounds tried.
+    validations:
+      required: false

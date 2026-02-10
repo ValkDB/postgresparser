@@ -1,0 +1,80 @@
+name: Feature Request
+description: Request new SQL parsing or analysis capabilities
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement to postgresparser!
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What capability are you looking for?
+      placeholder: "e.g., Parse CREATE TABLE to extract column metadata"
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What are you building? How would this feature help?
+      placeholder: "e.g., I'm generating documentation from pg_dump output and need structured column info"
+    validations:
+      required: true
+
+  - type: textarea
+    id: sql-example
+    attributes:
+      label: SQL example
+      description: Provide a representative SQL statement you need to parse.
+      render: sql
+      placeholder: |
+        CREATE TABLE public.users (
+            id integer NOT NULL,
+            email text NOT NULL,
+            name text
+        );
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-output
+    attributes:
+      label: Expected output
+      description: What structured data should the parser return? Pseudocode, JSON, or Go struct literals are all fine.
+      render: json
+      placeholder: |
+        {
+          "command": "DDL",
+          "tables": [{"schema": "public", "name": "users"}],
+          "ddl_actions": [{
+            "type": "CREATE_TABLE",
+            "columns": ["id", "email", "name"]
+          }]
+        }
+    validations:
+      required: false
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which layer?
+      description: |
+        Where should this feature live? See [Architecture Decision Guide](https://github.com/ValkDB/postgresparser/blob/main/docs/architecture-decision-guide.md) if unsure.
+      options:
+        - "Core parser (new IR field / parse tree extraction)"
+        - "Analysis layer (interpretation / schema-aware / convenience)"
+        - "Not sure"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Anything else? Related issues, PostgreSQL version specifics, alternative approaches you considered.
+    validations:
+      required: false

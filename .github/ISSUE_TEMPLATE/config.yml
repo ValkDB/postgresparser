@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Architecture Decision Guide
+    url: https://github.com/ValkDB/postgresparser/blob/main/docs/architecture-decision-guide.md
+    about: Not sure if your feature belongs in the core parser or analysis layer? Check here first.
