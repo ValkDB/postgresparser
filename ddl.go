@@ -1,4 +1,4 @@
-// ddl.go implements DDL population logic for DROP, ALTER TABLE, CREATE INDEX, and TRUNCATE.
+// ddl.go implements DDL population logic for CREATE TABLE, DROP, ALTER TABLE, CREATE INDEX, and TRUNCATE.
 package postgresparser
 
 import (
@@ -9,6 +9,103 @@ import (
 
 	"github.com/valkdb/postgresparser/gen"
 )
+
+// populateCreateTable handles CREATE TABLE metadata extraction (table + columns).
+func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens antlr.TokenStream) error {
+	if ctx == nil {
+		return fmt.Errorf("create table statement: %w", ErrNilContext)
+	}
+	// This rule is specific to CREATE TABLE.
+	if ctx.TABLE() == nil {
+		return nil
+	}
+
+	tableRaw := ""
+	if qualified := ctx.Qualified_name(0); qualified != nil {
+		if prc, ok := qualified.(antlr.ParserRuleContext); ok {
+			tableRaw = strings.TrimSpace(ctxText(tokens, prc))
+		}
+	}
+	schema, tableName := splitQualifiedName(tableRaw)
+	if tableRaw != "" {
+		result.Tables = append(result.Tables, TableRef{
+			Schema: schema,
+			Name:   tableName,
+			Type:   TableTypeBase,
+			Raw:    tableRaw,
+		})
+	}
+
+	var flags []string
+	if ctx.IF_P() != nil && ctx.NOT() != nil && ctx.EXISTS() != nil {
+		flags = append(flags, "IF_NOT_EXISTS")
+	}
+
+	action := DDLAction{
+		Type:       DDLCreateTable,
+		ObjectName: tableName,
+		Schema:     schema,
+		Flags:      flags,
+	}
+
+	if opts := ctx.Opttableelementlist(); opts != nil && opts.Tableelementlist() != nil {
+		for _, tableElem := range opts.Tableelementlist().AllTableelement() {
+			if tableElem == nil || tableElem.ColumnDef() == nil {
+				continue
+			}
+			col := extractCreateTableColumn(tableElem.ColumnDef(), tokens)
+			if col.Name == "" {
+				continue
+			}
+			action.Columns = append(action.Columns, col.Name)
+			action.ColumnDetails = append(action.ColumnDetails, col)
+		}
+	}
+
+	result.DDLActions = append(result.DDLActions, action)
+	return nil
+}
+
+// extractCreateTableColumn extracts metadata for a single CREATE TABLE column definition.
+func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenStream) DDLColumn {
+	if colDef == nil {
+		return DDLColumn{}
+	}
+
+	var col DDLColumn
+	if colid := colDef.Colid(); colid != nil {
+		if prc, ok := colid.(antlr.ParserRuleContext); ok {
+			col.Name = strings.TrimSpace(ctxText(tokens, prc))
+		}
+	}
+	if typ := colDef.Typename(); typ != nil {
+		if prc, ok := typ.(antlr.ParserRuleContext); ok {
+			col.Type = normalizeSpace(ctxText(tokens, prc))
+		}
+	}
+
+	col.Nullable = true // PostgreSQL defaults to nullable unless constrained.
+	if quals := colDef.Colquallist(); quals != nil {
+		for _, constraint := range quals.AllColconstraint() {
+			if constraint == nil || constraint.Colconstraintelem() == nil {
+				continue
+			}
+			elem := constraint.Colconstraintelem()
+
+			// PRIMARY KEY implies NOT NULL in PostgreSQL.
+			if (elem.NOT() != nil && elem.NULL_P() != nil) || (elem.PRIMARY() != nil && elem.KEY() != nil) {
+				col.Nullable = false
+			}
+
+			if elem.DEFAULT() != nil && elem.B_expr() != nil {
+				if prc, ok := elem.B_expr().(antlr.ParserRuleContext); ok {
+					col.Default = strings.TrimSpace(ctxText(tokens, prc))
+				}
+			}
+		}
+	}
+	return col
+}
 
 // populateDropStmt handles DROP TABLE, DROP INDEX, and DROP INDEX CONCURRENTLY.
 func populateDropStmt(result *ParsedQuery, ctx gen.IDropstmtContext, tokens antlr.TokenStream) error {
@@ -40,9 +137,11 @@ func populateDropStmt(result *ParsedQuery, ctx gen.IDropstmtContext, tokens antl
 					continue
 				}
 				name := strings.TrimSpace(ctxText(tokens, prc))
+				schema, objectName := splitQualifiedName(name)
 				result.DDLActions = append(result.DDLActions, DDLAction{
 					Type:       DDLDropIndex,
-					ObjectName: name,
+					ObjectName: objectName,
+					Schema:     schema,
 					Flags:      copyFlags(flags),
 				})
 			}
@@ -64,7 +163,8 @@ func populateDropStmt(result *ParsedQuery, ctx gen.IDropstmtContext, tokens antl
 					schema, tableName := splitQualifiedName(nameText)
 					result.DDLActions = append(result.DDLActions, DDLAction{
 						Type:       DDLDropTable,
-						ObjectName: nameText,
+						ObjectName: tableName,
+						Schema:     schema,
 						Flags:      copyFlags(flags),
 					})
 					result.Tables = append(result.Tables, TableRef{
@@ -81,9 +181,11 @@ func populateDropStmt(result *ParsedQuery, ctx gen.IDropstmtContext, tokens antl
 						continue
 					}
 					name := strings.TrimSpace(ctxText(tokens, prc))
+					schema, objectName := splitQualifiedName(name)
 					result.DDLActions = append(result.DDLActions, DDLAction{
 						Type:       DDLDropIndex,
-						ObjectName: name,
+						ObjectName: objectName,
+						Schema:     schema,
 						Flags:      copyFlags(flags),
 					})
 				}
@@ -103,17 +205,21 @@ func populateAlterTable(result *ParsedQuery, ctx gen.IAltertablestmtContext, tok
 		return nil
 	}
 
+	tableRaw := ""
 	tableName := ""
+	tableSchema := ""
 	if rel := ctx.Relation_expr(); rel != nil {
 		if prc, ok := rel.(antlr.ParserRuleContext); ok {
-			tableName = strings.TrimSpace(ctxText(tokens, prc))
+			tableRaw = strings.TrimSpace(ctxText(tokens, prc))
 		}
-		schema, name := splitQualifiedName(tableName)
+		schema, name := splitQualifiedName(tableRaw)
+		tableName = name
+		tableSchema = schema
 		result.Tables = append(result.Tables, TableRef{
 			Schema: schema,
 			Name:   name,
 			Type:   TableTypeBase,
-			Raw:    tableName,
+			Raw:    tableRaw,
 		})
 	}
 
@@ -122,13 +228,13 @@ func populateAlterTable(result *ParsedQuery, ctx gen.IAltertablestmtContext, tok
 		return nil
 	}
 	for _, cmd := range cmds.AllAlter_table_cmd() {
-		populateAlterTableCmd(result, cmd, tokens, tableName)
+		populateAlterTableCmd(result, cmd, tokens, tableName, tableSchema)
 	}
 	return nil
 }
 
 // populateAlterTableCmd processes a single ALTER TABLE sub-command.
-func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext, tokens antlr.TokenStream, tableName string) {
+func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext, tokens antlr.TokenStream, tableName, tableSchema string) {
 	if cmd == nil {
 		return
 	}
@@ -159,6 +265,7 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 		result.DDLActions = append(result.DDLActions, DDLAction{
 			Type:       DDLDropColumn,
 			ObjectName: tableName,
+			Schema:     tableSchema,
 			Columns:    []string{colName},
 			Flags:      flags,
 		})
@@ -187,6 +294,7 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 		result.DDLActions = append(result.DDLActions, DDLAction{
 			Type:       DDLAlterTable,
 			ObjectName: tableName,
+			Schema:     tableSchema,
 			Columns:    []string{colName},
 			Flags:      addFlags,
 		})
@@ -201,6 +309,7 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 		result.DDLActions = append(result.DDLActions, DDLAction{
 			Type:       DDLAlterTable,
 			ObjectName: tableName,
+			Schema:     tableSchema,
 			Columns:    []string{colName},
 			Flags:      alterFlags,
 		})
@@ -210,6 +319,7 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 		result.DDLActions = append(result.DDLActions, DDLAction{
 			Type:       DDLAlterTable,
 			ObjectName: tableName,
+			Schema:     tableSchema,
 			Flags:      flags,
 		})
 	}
@@ -233,26 +343,28 @@ func populateCreateIndex(result *ParsedQuery, ctx gen.IIndexstmtContext, tokens 
 		return fmt.Errorf("create index statement: %w", ErrNilContext)
 	}
 
-	indexName := ""
+	indexRaw := ""
 	if idx := ctx.Index_name_(); idx != nil {
 		if idx.Name() != nil {
 			if prc, ok := idx.Name().(antlr.ParserRuleContext); ok {
-				indexName = strings.TrimSpace(ctxText(tokens, prc))
+				indexRaw = strings.TrimSpace(ctxText(tokens, prc))
 			}
 		}
 	}
-	if indexName == "" && ctx.Name() != nil {
+	if indexRaw == "" && ctx.Name() != nil {
 		if prc, ok := ctx.Name().(antlr.ParserRuleContext); ok {
-			indexName = strings.TrimSpace(ctxText(tokens, prc))
+			indexRaw = strings.TrimSpace(ctxText(tokens, prc))
 		}
 	}
 
 	tableName := ""
+	tableSchema := ""
 	if rel := ctx.Relation_expr(); rel != nil {
 		if prc, ok := rel.(antlr.ParserRuleContext); ok {
 			tableName = strings.TrimSpace(ctxText(tokens, prc))
 		}
 		schema, name := splitQualifiedName(tableName)
+		tableSchema = schema
 		result.Tables = append(result.Tables, TableRef{
 			Schema: schema,
 			Name:   name,
@@ -295,9 +407,15 @@ func populateCreateIndex(result *ParsedQuery, ctx gen.IIndexstmtContext, tokens 
 		}
 	}
 
+	indexSchema, indexName := splitQualifiedName(indexRaw)
+	if indexSchema == "" {
+		indexSchema = tableSchema
+	}
+
 	action := DDLAction{
 		Type:       DDLCreateIndex,
 		ObjectName: indexName,
+		Schema:     indexSchema,
 		Columns:    columns,
 		Flags:      flags,
 		IndexType:  indexType,
@@ -338,7 +456,8 @@ func populateTruncate(result *ParsedQuery, ctx gen.ITruncatestmtContext, tokens 
 			schema, name := splitQualifiedName(nameText)
 			result.DDLActions = append(result.DDLActions, DDLAction{
 				Type:       DDLTruncate,
-				ObjectName: nameText,
+				ObjectName: name,
+				Schema:     schema,
 				Flags:      copyFlags(flags),
 			})
 			result.Tables = append(result.Tables, TableRef{
@@ -360,4 +479,9 @@ func copyFlags(flags []string) []string {
 	out := make([]string, len(flags))
 	copy(out, flags)
 	return out
+}
+
+// normalizeSpace collapses repeated internal whitespace to a single space.
+func normalizeSpace(s string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
 }

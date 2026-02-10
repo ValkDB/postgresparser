@@ -53,7 +53,7 @@ go get github.com/valkdb/postgresparser
 Handles the SQL you actually write in production:
 
 - **DML**: SELECT, INSERT, UPDATE, DELETE, MERGE
-- **DDL**: CREATE INDEX, DROP TABLE/INDEX, ALTER TABLE, TRUNCATE
+- **DDL**: CREATE TABLE (columns/type/nullability/default), CREATE INDEX, DROP TABLE/INDEX, ALTER TABLE, TRUNCATE
 - **CTEs**: `WITH ... AS` including `RECURSIVE`, materialization hints
 - **JOINs**: INNER, LEFT, RIGHT, FULL, CROSS, NATURAL, LATERAL
 - **Subqueries**: in SELECT, FROM, WHERE, and HAVING
@@ -63,6 +63,8 @@ Handles the SQL you actually write in production:
 - **Window functions**: OVER, PARTITION BY
 - **Type casts**: `::type`
 - **Parameters**: `$1`, `$2`, ...
+
+IR field reference: [ParsedQuery IR Reference](docs/parsed-query.md)
 
 ## Analysis
 
@@ -122,6 +124,10 @@ joins, _ := analysis.ExtractJoinRelationshipsWithSchema(
 // orders.customer_id → customers.id
 ```
 
+### DDL extraction
+
+For `CREATE TABLE` parsing, see [`examples/ddl/`](examples/ddl/).
+
 ## Performance
 
 With SLL prediction mode, `postgresparser` parses most queries in **70–350 µs** with minimal allocations. The IR extraction layer accounts for only ~3% of CPU — the rest is ANTLR's grammar engine, which SLL mode keeps fast.
@@ -134,6 +140,7 @@ See the [`examples/`](examples/) directory:
 
 - [`basic/`](examples/basic/) — Parse SQL and inspect the IR
 - [`analysis/`](examples/analysis/) — Column usage, WHERE conditions, JOIN relationships
+- [`ddl/`](examples/ddl/) — Parse CREATE TABLE / ALTER TABLE plus DELETE command metadata
 - [`sll_mode/`](examples/sll_mode/) — SLL prediction mode for maximum throughput
 
 ## Grammar

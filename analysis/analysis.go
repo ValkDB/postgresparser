@@ -334,11 +334,30 @@ func convertDDLActions(actions []postgresparser.DDLAction) []SQLDDLAction {
 	out := make([]SQLDDLAction, 0, len(actions))
 	for _, a := range actions {
 		out = append(out, SQLDDLAction{
-			Type:       string(a.Type),
-			ObjectName: a.ObjectName,
-			Columns:    append([]string(nil), a.Columns...),
-			Flags:      append([]string(nil), a.Flags...),
-			IndexType:  a.IndexType,
+			Type:          string(a.Type),
+			ObjectName:    a.ObjectName,
+			Schema:        a.Schema,
+			Columns:       append([]string(nil), a.Columns...),
+			ColumnDetails: convertDDLColumns(a.ColumnDetails),
+			Flags:         append([]string(nil), a.Flags...),
+			IndexType:     a.IndexType,
+		})
+	}
+	return out
+}
+
+// convertDDLColumns maps parser CREATE TABLE column metadata into analysis DTOs.
+func convertDDLColumns(cols []postgresparser.DDLColumn) []SQLDDLColumn {
+	if len(cols) == 0 {
+		return nil
+	}
+	out := make([]SQLDDLColumn, 0, len(cols))
+	for _, c := range cols {
+		out = append(out, SQLDDLColumn{
+			Name:     c.Name,
+			Type:     c.Type,
+			Nullable: c.Nullable,
+			Default:  c.Default,
 		})
 	}
 	return out

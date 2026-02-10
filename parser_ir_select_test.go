@@ -362,9 +362,9 @@ LEFT JOIN purchases p ON u.id = p.user_id AND p.amount > 0`
 	assert.Contains(t, ir.JoinConditions[0], "p.amount > 0", "unexpected join condition")
 }
 
-// TestIR_FallbackToUnknown confirms unsupported statements return UNKNOWN.
+// TestIR_FallbackToUnknown confirms unsupported statements still return UNKNOWN.
 func TestIR_FallbackToUnknown(t *testing.T) {
-	sql := `CREATE TABLE demo(id INT PRIMARY KEY);`
+	sql := `BEGIN`
 	ir := parseAssertNoError(t, sql)
 
 	assert.Equal(t, QueryCommandUnknown, ir.Command, "expected UNKNOWN command for unsupported statement")

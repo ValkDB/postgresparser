@@ -12,6 +12,7 @@ func TestAnalyzeSQL_DDL_DropTable(t *testing.T) {
 		sql        string
 		wantCount  int
 		wantObject string
+		wantSchema string
 		wantFlags  []string
 		wantTables int
 	}{
@@ -50,7 +51,8 @@ func TestAnalyzeSQL_DDL_DropTable(t *testing.T) {
 			name:       "schema-qualified",
 			sql:        "DROP TABLE myschema.users",
 			wantCount:  1,
-			wantObject: "myschema.users",
+			wantObject: "users",
+			wantSchema: "myschema",
 			wantTables: 1,
 		},
 		{
@@ -88,6 +90,9 @@ func TestAnalyzeSQL_DDL_DropTable(t *testing.T) {
 			if tc.wantObject != "" && act.ObjectName != tc.wantObject {
 				t.Fatalf("expected object %q, got %q", tc.wantObject, act.ObjectName)
 			}
+			if tc.wantSchema != "" && act.Schema != tc.wantSchema {
+				t.Fatalf("expected schema %q, got %q", tc.wantSchema, act.Schema)
+			}
 			for _, f := range tc.wantFlags {
 				assertAnalysisFlag(t, act.Flags, f)
 			}
@@ -101,28 +106,40 @@ func TestAnalyzeSQL_DDL_DropTable(t *testing.T) {
 // TestAnalyzeSQL_DDL_DropIndex verifies DROP INDEX flags like IF EXISTS and CONCURRENTLY.
 func TestAnalyzeSQL_DDL_DropIndex(t *testing.T) {
 	tests := []struct {
-		name      string
-		sql       string
-		wantFlags []string
+		name       string
+		sql        string
+		wantObject string
+		wantSchema string
+		wantFlags  []string
 	}{
 		{
-			name: "simple",
-			sql:  "DROP INDEX idx_users_email",
+			name:       "simple",
+			sql:        "DROP INDEX idx_users_email",
+			wantObject: "idx_users_email",
 		},
 		{
-			name:      "IF EXISTS",
-			sql:       "DROP INDEX IF EXISTS idx_users_email",
-			wantFlags: []string{"IF_EXISTS"},
+			name:       "IF EXISTS",
+			sql:        "DROP INDEX IF EXISTS idx_users_email",
+			wantObject: "idx_users_email",
+			wantFlags:  []string{"IF_EXISTS"},
 		},
 		{
-			name:      "CONCURRENTLY",
-			sql:       "DROP INDEX CONCURRENTLY idx_users_email",
-			wantFlags: []string{"CONCURRENTLY"},
+			name:       "CONCURRENTLY",
+			sql:        "DROP INDEX CONCURRENTLY idx_users_email",
+			wantObject: "idx_users_email",
+			wantFlags:  []string{"CONCURRENTLY"},
 		},
 		{
-			name:      "CONCURRENTLY IF EXISTS",
-			sql:       "DROP INDEX CONCURRENTLY IF EXISTS idx_users_email",
-			wantFlags: []string{"CONCURRENTLY", "IF_EXISTS"},
+			name:       "CONCURRENTLY IF EXISTS",
+			sql:        "DROP INDEX CONCURRENTLY IF EXISTS idx_users_email",
+			wantObject: "idx_users_email",
+			wantFlags:  []string{"CONCURRENTLY", "IF_EXISTS"},
+		},
+		{
+			name:       "schema-qualified",
+			sql:        "DROP INDEX public.idx_users_email",
+			wantObject: "idx_users_email",
+			wantSchema: "public",
 		},
 	}
 
@@ -142,6 +159,12 @@ func TestAnalyzeSQL_DDL_DropIndex(t *testing.T) {
 			if act.Type != "DROP_INDEX" {
 				t.Fatalf("expected DROP_INDEX, got %s", act.Type)
 			}
+			if tc.wantObject != "" && act.ObjectName != tc.wantObject {
+				t.Fatalf("expected object %q, got %q", tc.wantObject, act.ObjectName)
+			}
+			if tc.wantSchema != "" && act.Schema != tc.wantSchema {
+				t.Fatalf("expected schema %q, got %q", tc.wantSchema, act.Schema)
+			}
 			for _, f := range tc.wantFlags {
 				assertAnalysisFlag(t, act.Flags, f)
 			}
@@ -155,6 +178,7 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 		name       string
 		sql        string
 		wantObject string
+		wantSchema string
 		wantCols   int
 		wantFlags  []string
 		wantIdx    string
@@ -215,6 +239,14 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 			wantFlags:  []string{"IF_NOT_EXISTS"},
 			wantTable:  "users",
 		},
+		{
+			name:       "schema-qualified table",
+			sql:        "CREATE INDEX idx_email ON public.users (email)",
+			wantObject: "idx_email",
+			wantSchema: "public",
+			wantCols:   1,
+			wantTable:  "users",
+		},
 	}
 
 	for _, tc := range tests {
@@ -236,6 +268,9 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 			if act.ObjectName != tc.wantObject {
 				t.Fatalf("expected object %q, got %q", tc.wantObject, act.ObjectName)
 			}
+			if tc.wantSchema != "" && act.Schema != tc.wantSchema {
+				t.Fatalf("expected schema %q, got %q", tc.wantSchema, act.Schema)
+			}
 			if len(act.Columns) != tc.wantCols {
 				t.Fatalf("expected %d columns, got %d: %v", tc.wantCols, len(act.Columns), act.Columns)
 			}
@@ -251,6 +286,190 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestAnalyzeSQL_DDL_CreateTable verifies CREATE TABLE metadata extraction.
+func TestAnalyzeSQL_DDL_CreateTable(t *testing.T) {
+	sql := `CREATE TABLE public.users (
+    id integer NOT NULL,
+    email text NOT NULL,
+    name text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);`
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d: %+v", len(res.DDLActions), res.DDLActions)
+	}
+
+	act := res.DDLActions[0]
+	if act.Type != "CREATE_TABLE" {
+		t.Fatalf("expected CREATE_TABLE, got %s", act.Type)
+	}
+	if act.ObjectName != "users" {
+		t.Fatalf("expected object users, got %q", act.ObjectName)
+	}
+	if act.Schema != "public" {
+		t.Fatalf("expected schema public, got %q", act.Schema)
+	}
+	if len(act.Columns) != 4 {
+		t.Fatalf("expected 4 columns, got %d: %v", len(act.Columns), act.Columns)
+	}
+	if len(act.ColumnDetails) != 4 {
+		t.Fatalf("expected 4 column details, got %d: %+v", len(act.ColumnDetails), act.ColumnDetails)
+	}
+
+	want := []SQLDDLColumn{
+		{Name: "id", Type: "integer", Nullable: false},
+		{Name: "email", Type: "text", Nullable: false},
+		{Name: "name", Type: "text", Nullable: true},
+		{Name: "created_at", Type: "timestamp without time zone", Nullable: false, Default: "CURRENT_TIMESTAMP"},
+	}
+	for i := range want {
+		if act.ColumnDetails[i] != want[i] {
+			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
+		}
+	}
+
+	if len(res.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
+	}
+	if res.Tables[0].Schema != "public" || res.Tables[0].Name != "users" {
+		t.Fatalf("expected table public.users, got %+v", res.Tables[0])
+	}
+}
+
+func TestAnalyzeSQL_DDL_CreateTableTypeCoverage(t *testing.T) {
+	sql := `CREATE TABLE public.type_matrix (
+    c_smallint smallint,
+    c_integer integer,
+    c_bigint bigint,
+    c_numeric numeric(10,2),
+    c_real real,
+    c_double double precision,
+    c_money money,
+    c_bool boolean,
+    c_char char(3),
+    c_varchar varchar(50),
+    c_text text,
+    c_bytea bytea,
+    c_date date,
+    c_time time without time zone,
+    c_timetz time with time zone,
+    c_timestamp timestamp without time zone,
+    c_timestamptz timestamp with time zone,
+    c_interval interval year to month,
+    c_uuid uuid,
+    c_json json,
+    c_jsonb jsonb,
+    c_xml xml,
+    c_inet inet,
+    c_cidr cidr,
+    c_macaddr macaddr,
+    c_macaddr8 macaddr8,
+    c_point point,
+    c_line line,
+    c_lseg lseg,
+    c_box box,
+    c_path path,
+    c_polygon polygon,
+    c_circle circle,
+    c_int4range int4range,
+    c_numrange numrange,
+    c_tstzrange tstzrange,
+    c_int_array integer[],
+    c_text_array text[]
+);`
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d", len(res.DDLActions))
+	}
+
+	act := res.DDLActions[0]
+	if act.Type != "CREATE_TABLE" {
+		t.Fatalf("expected CREATE_TABLE, got %s", act.Type)
+	}
+	if act.Schema != "public" {
+		t.Fatalf("expected schema public, got %q", act.Schema)
+	}
+	if act.ObjectName != "type_matrix" {
+		t.Fatalf("expected object type_matrix, got %q", act.ObjectName)
+	}
+
+	wantTypes := map[string]string{
+		"c_smallint":    "smallint",
+		"c_integer":     "integer",
+		"c_bigint":      "bigint",
+		"c_numeric":     "numeric(10,2)",
+		"c_real":        "real",
+		"c_double":      "double precision",
+		"c_money":       "money",
+		"c_bool":        "boolean",
+		"c_char":        "char(3)",
+		"c_varchar":     "varchar(50)",
+		"c_text":        "text",
+		"c_bytea":       "bytea",
+		"c_date":        "date",
+		"c_time":        "time without time zone",
+		"c_timetz":      "time with time zone",
+		"c_timestamp":   "timestamp without time zone",
+		"c_timestamptz": "timestamp with time zone",
+		"c_interval":    "interval year to month",
+		"c_uuid":        "uuid",
+		"c_json":        "json",
+		"c_jsonb":       "jsonb",
+		"c_xml":         "xml",
+		"c_inet":        "inet",
+		"c_cidr":        "cidr",
+		"c_macaddr":     "macaddr",
+		"c_macaddr8":    "macaddr8",
+		"c_point":       "point",
+		"c_line":        "line",
+		"c_lseg":        "lseg",
+		"c_box":         "box",
+		"c_path":        "path",
+		"c_polygon":     "polygon",
+		"c_circle":      "circle",
+		"c_int4range":   "int4range",
+		"c_numrange":    "numrange",
+		"c_tstzrange":   "tstzrange",
+		"c_int_array":   "integer[]",
+		"c_text_array":  "text[]",
+	}
+
+	if len(act.ColumnDetails) != len(wantTypes) {
+		t.Fatalf("expected %d column details, got %d", len(wantTypes), len(act.ColumnDetails))
+	}
+	got := make(map[string]SQLDDLColumn, len(act.ColumnDetails))
+	for _, col := range act.ColumnDetails {
+		got[col.Name] = col
+	}
+	for colName, wantType := range wantTypes {
+		col, ok := got[colName]
+		if !ok {
+			t.Fatalf("missing column %q", colName)
+		}
+		if col.Type != wantType {
+			t.Fatalf("type mismatch for %s: got %q want %q", colName, col.Type, wantType)
+		}
+		if !col.Nullable {
+			t.Fatalf("expected nullable=true by default for %s", colName)
+		}
+		if col.Default != "" {
+			t.Fatalf("expected empty default for %s, got %q", colName, col.Default)
+		}
 	}
 }
 
@@ -332,6 +551,29 @@ func TestAnalyzeSQL_DDL_AlterTableAddColumn(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSQL_DDL_AlterTableSchemaQualified(t *testing.T) {
+	res, err := AnalyzeSQL("ALTER TABLE public.users ADD COLUMN status text")
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d", len(res.DDLActions))
+	}
+	act := res.DDLActions[0]
+	if act.Type != "ALTER_TABLE" {
+		t.Fatalf("expected ALTER_TABLE, got %s", act.Type)
+	}
+	if act.Schema != "public" {
+		t.Fatalf("expected schema public, got %q", act.Schema)
+	}
+	if act.ObjectName != "users" {
+		t.Fatalf("expected object users, got %q", act.ObjectName)
+	}
+}
+
 // TestAnalyzeSQL_DDL_AlterTableMultiAction checks ALTER TABLE with combined ADD and DROP actions.
 func TestAnalyzeSQL_DDL_AlterTableMultiAction(t *testing.T) {
 	res, err := AnalyzeSQL("ALTER TABLE users ADD COLUMN status text, DROP COLUMN legacy")
@@ -367,6 +609,8 @@ func TestAnalyzeSQL_DDL_Truncate(t *testing.T) {
 		name       string
 		sql        string
 		wantCount  int
+		wantObject string
+		wantSchema string
 		wantFlags  []string
 		wantTables int
 	}{
@@ -409,6 +653,14 @@ func TestAnalyzeSQL_DDL_Truncate(t *testing.T) {
 			wantFlags:  []string{"CASCADE"},
 			wantTables: 2,
 		},
+		{
+			name:       "schema-qualified",
+			sql:        "TRUNCATE public.users",
+			wantCount:  1,
+			wantObject: "users",
+			wantSchema: "public",
+			wantTables: 1,
+		},
 	}
 
 	for _, tc := range tests {
@@ -429,6 +681,16 @@ func TestAnalyzeSQL_DDL_Truncate(t *testing.T) {
 				}
 				for _, f := range tc.wantFlags {
 					assertAnalysisFlag(t, act.Flags, f)
+				}
+			}
+			if tc.wantObject != "" {
+				if res.DDLActions[0].ObjectName != tc.wantObject {
+					t.Fatalf("expected object %q, got %q", tc.wantObject, res.DDLActions[0].ObjectName)
+				}
+			}
+			if tc.wantSchema != "" {
+				if res.DDLActions[0].Schema != tc.wantSchema {
+					t.Fatalf("expected schema %q, got %q", tc.wantSchema, res.DDLActions[0].Schema)
 				}
 			}
 			if len(res.Tables) != tc.wantTables {

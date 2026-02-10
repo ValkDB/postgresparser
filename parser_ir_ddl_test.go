@@ -15,6 +15,7 @@ func TestIR_DDL_DropTable(t *testing.T) {
 		wantActions int
 		wantType    DDLActionType
 		wantObject  string
+		wantSchema  string
 		wantFlags   []string
 		wantTables  int
 	}{
@@ -49,7 +50,8 @@ func TestIR_DDL_DropTable(t *testing.T) {
 			sql:         "DROP TABLE myschema.users",
 			wantActions: 1,
 			wantType:    DDLDropTable,
-			wantObject:  "myschema.users",
+			wantObject:  "users",
+			wantSchema:  "myschema",
 			wantTables:  1,
 		},
 		{
@@ -72,6 +74,9 @@ func TestIR_DDL_DropTable(t *testing.T) {
 			if tc.wantObject != "" {
 				assert.Equal(t, tc.wantObject, act.ObjectName, "object name mismatch")
 			}
+			if tc.wantSchema != "" {
+				assert.Equal(t, tc.wantSchema, act.Schema, "schema mismatch")
+			}
 			assert.Subset(t, act.Flags, tc.wantFlags, "flags mismatch")
 			assert.Len(t, ir.Tables, tc.wantTables, "tables count mismatch")
 		})
@@ -83,24 +88,36 @@ func TestIR_DDL_DropIndex(t *testing.T) {
 		name        string
 		sql         string
 		wantActions int
+		wantObject  string
+		wantSchema  string
 		wantFlags   []string
 	}{
 		{
 			name:        "simple",
 			sql:         "DROP INDEX idx_users_email",
 			wantActions: 1,
+			wantObject:  "idx_users_email",
 		},
 		{
 			name:        "CONCURRENTLY",
 			sql:         "DROP INDEX CONCURRENTLY idx_users_email",
 			wantActions: 1,
+			wantObject:  "idx_users_email",
 			wantFlags:   []string{"CONCURRENTLY"},
 		},
 		{
 			name:        "IF EXISTS",
 			sql:         "DROP INDEX IF EXISTS idx_users_email",
 			wantActions: 1,
+			wantObject:  "idx_users_email",
 			wantFlags:   []string{"IF_EXISTS"},
+		},
+		{
+			name:        "schema-qualified",
+			sql:         "DROP INDEX public.idx_users_email",
+			wantActions: 1,
+			wantObject:  "idx_users_email",
+			wantSchema:  "public",
 		},
 	}
 
@@ -112,7 +129,10 @@ func TestIR_DDL_DropIndex(t *testing.T) {
 
 			act := ir.DDLActions[0]
 			assert.Equal(t, DDLDropIndex, act.Type, "expected DROP_INDEX")
-			assert.Equal(t, "idx_users_email", act.ObjectName, "object name mismatch")
+			assert.Equal(t, tc.wantObject, act.ObjectName, "object name mismatch")
+			if tc.wantSchema != "" {
+				assert.Equal(t, tc.wantSchema, act.Schema, "schema mismatch")
+			}
 			assert.Subset(t, act.Flags, tc.wantFlags, "flags mismatch")
 		})
 	}
@@ -123,6 +143,7 @@ func TestIR_DDL_CreateIndex(t *testing.T) {
 		name       string
 		sql        string
 		wantObject string
+		wantSchema string
 		wantCols   int
 		wantFlags  []string
 		wantIdx    string
@@ -182,6 +203,14 @@ func TestIR_DDL_CreateIndex(t *testing.T) {
 			wantFlags:  []string{"IF_NOT_EXISTS"},
 			wantTables: 1,
 		},
+		{
+			name:       "schema-qualified table",
+			sql:        "CREATE INDEX idx_email ON public.users (email)",
+			wantObject: "idx_email",
+			wantSchema: "public",
+			wantCols:   1,
+			wantTables: 1,
+		},
 	}
 
 	for _, tc := range tests {
@@ -193,6 +222,9 @@ func TestIR_DDL_CreateIndex(t *testing.T) {
 			act := ir.DDLActions[0]
 			assert.Equal(t, DDLCreateIndex, act.Type, "expected CREATE_INDEX")
 			assert.Equal(t, tc.wantObject, act.ObjectName, "object name mismatch")
+			if tc.wantSchema != "" {
+				assert.Equal(t, tc.wantSchema, act.Schema, "schema mismatch")
+			}
 			assert.Len(t, act.Columns, tc.wantCols, "column count mismatch")
 			assert.Subset(t, act.Flags, tc.wantFlags, "flags mismatch")
 
@@ -201,6 +233,153 @@ func TestIR_DDL_CreateIndex(t *testing.T) {
 			}
 			assert.Len(t, ir.Tables, tc.wantTables, "tables count mismatch")
 		})
+	}
+}
+
+func TestIR_DDL_CreateTable(t *testing.T) {
+	sql := `CREATE TABLE public.users (
+    id integer NOT NULL,
+    email text NOT NULL,
+    name text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLCreateTable, act.Type, "expected CREATE_TABLE")
+	assert.Equal(t, "users", act.ObjectName, "object name mismatch")
+	assert.Equal(t, "public", act.Schema, "schema mismatch")
+	assert.Equal(t, []string{"id", "email", "name", "created_at"}, act.Columns, "column names mismatch")
+	assert.Equal(t, []DDLColumn{
+		{Name: "id", Type: "integer", Nullable: false},
+		{Name: "email", Type: "text", Nullable: false},
+		{Name: "name", Type: "text", Nullable: true},
+		{Name: "created_at", Type: "timestamp without time zone", Nullable: false, Default: "CURRENT_TIMESTAMP"},
+	}, act.ColumnDetails, "column details mismatch")
+
+	require.Len(t, ir.Tables, 1, "tables count mismatch")
+	assert.Equal(t, "public", ir.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "users", ir.Tables[0].Name, "table name mismatch")
+}
+
+func TestIR_DDL_CreateTableIfNotExists(t *testing.T) {
+	ir := parseAssertNoError(t, "CREATE TABLE IF NOT EXISTS users (id integer)")
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLCreateTable, act.Type, "expected CREATE_TABLE")
+	assert.Equal(t, "users", act.ObjectName, "object name mismatch")
+	assert.Subset(t, act.Flags, []string{"IF_NOT_EXISTS"}, "flags mismatch")
+	require.Len(t, act.ColumnDetails, 1, "column details mismatch")
+	assert.Equal(t, DDLColumn{Name: "id", Type: "integer", Nullable: true}, act.ColumnDetails[0], "column mismatch")
+}
+
+func TestIR_DDL_CreateTableTypeCoverage(t *testing.T) {
+	sql := `CREATE TABLE public.type_matrix (
+    c_smallint smallint,
+    c_integer integer,
+    c_bigint bigint,
+    c_numeric numeric(10,2),
+    c_real real,
+    c_double double precision,
+    c_money money,
+    c_bool boolean,
+    c_char char(3),
+    c_varchar varchar(50),
+    c_text text,
+    c_bytea bytea,
+    c_date date,
+    c_time time without time zone,
+    c_timetz time with time zone,
+    c_timestamp timestamp without time zone,
+    c_timestamptz timestamp with time zone,
+    c_interval interval year to month,
+    c_uuid uuid,
+    c_json json,
+    c_jsonb jsonb,
+    c_xml xml,
+    c_inet inet,
+    c_cidr cidr,
+    c_macaddr macaddr,
+    c_macaddr8 macaddr8,
+    c_point point,
+    c_line line,
+    c_lseg lseg,
+    c_box box,
+    c_path path,
+    c_polygon polygon,
+    c_circle circle,
+    c_int4range int4range,
+    c_numrange numrange,
+    c_tstzrange tstzrange,
+    c_int_array integer[],
+    c_text_array text[]
+);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLCreateTable, act.Type, "expected CREATE_TABLE")
+	assert.Equal(t, "public", act.Schema, "schema mismatch")
+	assert.Equal(t, "type_matrix", act.ObjectName, "object name mismatch")
+
+	wantTypes := map[string]string{
+		"c_smallint":    "smallint",
+		"c_integer":     "integer",
+		"c_bigint":      "bigint",
+		"c_numeric":     "numeric(10,2)",
+		"c_real":        "real",
+		"c_double":      "double precision",
+		"c_money":       "money",
+		"c_bool":        "boolean",
+		"c_char":        "char(3)",
+		"c_varchar":     "varchar(50)",
+		"c_text":        "text",
+		"c_bytea":       "bytea",
+		"c_date":        "date",
+		"c_time":        "time without time zone",
+		"c_timetz":      "time with time zone",
+		"c_timestamp":   "timestamp without time zone",
+		"c_timestamptz": "timestamp with time zone",
+		"c_interval":    "interval year to month",
+		"c_uuid":        "uuid",
+		"c_json":        "json",
+		"c_jsonb":       "jsonb",
+		"c_xml":         "xml",
+		"c_inet":        "inet",
+		"c_cidr":        "cidr",
+		"c_macaddr":     "macaddr",
+		"c_macaddr8":    "macaddr8",
+		"c_point":       "point",
+		"c_line":        "line",
+		"c_lseg":        "lseg",
+		"c_box":         "box",
+		"c_path":        "path",
+		"c_polygon":     "polygon",
+		"c_circle":      "circle",
+		"c_int4range":   "int4range",
+		"c_numrange":    "numrange",
+		"c_tstzrange":   "tstzrange",
+		"c_int_array":   "integer[]",
+		"c_text_array":  "text[]",
+	}
+
+	require.Len(t, act.ColumnDetails, len(wantTypes), "column count mismatch")
+	got := make(map[string]DDLColumn, len(act.ColumnDetails))
+	for _, col := range act.ColumnDetails {
+		got[col.Name] = col
+	}
+	for colName, wantType := range wantTypes {
+		col, ok := got[colName]
+		require.Truef(t, ok, "missing column %q", colName)
+		assert.Equal(t, wantType, col.Type, "type mismatch for %s", colName)
+		assert.True(t, col.Nullable, "expected nullable=true by default for %s", colName)
+		assert.Empty(t, col.Default, "expected no default for %s", colName)
 	}
 }
 
@@ -258,6 +437,17 @@ func TestIR_DDL_AlterTableAddColumn(t *testing.T) {
 	assert.Contains(t, act.Flags, "ADD_COLUMN", "expected flag ADD_COLUMN")
 }
 
+func TestIR_DDL_AlterTableSchemaQualified(t *testing.T) {
+	ir := parseAssertNoError(t, "ALTER TABLE public.users ADD COLUMN status text")
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLAlterTable, act.Type, "expected ALTER_TABLE")
+	assert.Equal(t, "public", act.Schema, "schema mismatch")
+	assert.Equal(t, "users", act.ObjectName, "object name mismatch")
+}
+
 func TestIR_DDL_AlterTableMultiAction(t *testing.T) {
 	ir := parseAssertNoError(t, "ALTER TABLE users ADD COLUMN status text, DROP COLUMN legacy")
 	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
@@ -306,6 +496,12 @@ func TestIR_DDL_Truncate(t *testing.T) {
 			wantActions: 2,
 			wantTables:  2,
 		},
+		{
+			name:        "schema-qualified",
+			sql:         "TRUNCATE public.users",
+			wantActions: 1,
+			wantTables:  1,
+		},
 	}
 
 	for _, tc := range tests {
@@ -318,6 +514,10 @@ func TestIR_DDL_Truncate(t *testing.T) {
 				assert.Equal(t, DDLTruncate, act.Type, "expected TRUNCATE type")
 			}
 			assert.Subset(t, ir.DDLActions[0].Flags, tc.wantFlags, "flags mismatch")
+			if tc.name == "schema-qualified" {
+				assert.Equal(t, "public", ir.DDLActions[0].Schema, "schema mismatch")
+				assert.Equal(t, "users", ir.DDLActions[0].ObjectName, "object name mismatch")
+			}
 			assert.Len(t, ir.Tables, tc.wantTables, "tables count mismatch")
 		})
 	}

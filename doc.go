@@ -43,6 +43,8 @@
 //   - UPDATE with FROM clause, RETURNING
 //   - DELETE with USING clause, RETURNING
 //   - MERGE with MATCHED/NOT MATCHED actions
+//   - CREATE TABLE with column metadata (name, type, nullability, default)
+//   - CREATE/DROP INDEX, DROP TABLE, ALTER TABLE, TRUNCATE
 //   - Common Table Expressions (WITH ... AS)
 //   - Subqueries in SELECT, FROM, WHERE, and HAVING
 //   - All JOIN types (INNER, LEFT, RIGHT, FULL, CROSS, NATURAL, LATERAL)
