@@ -75,6 +75,15 @@ ORDER BY d.budget DESC`,
 )`,
 	},
 	{
+		Name: "DDL_CreateTable_Issue2",
+		SQL: `CREATE TABLE public.users (
+    id integer NOT NULL,
+    email text NOT NULL,
+    name text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+)`,
+	},
+	{
 		Name: "ComplexUpdate",
 		SQL: `UPDATE inventory
 SET quantity = quantity - oi.qty,

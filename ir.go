@@ -102,6 +102,7 @@ type MergeClause struct {
 type DDLActionType string
 
 const (
+	DDLCreateTable DDLActionType = "CREATE_TABLE"
 	DDLDropTable   DDLActionType = "DROP_TABLE"
 	DDLDropColumn  DDLActionType = "DROP_COLUMN"
 	DDLAlterTable  DDLActionType = "ALTER_TABLE"
@@ -110,13 +111,23 @@ const (
 	DDLTruncate    DDLActionType = "TRUNCATE"
 )
 
+// DDLColumn describes column-level metadata extracted from CREATE TABLE statements.
+type DDLColumn struct {
+	Name     string
+	Type     string
+	Nullable bool
+	Default  string
+}
+
 // DDLAction describes a single DDL operation extracted from a statement.
 type DDLAction struct {
-	Type       DDLActionType
-	ObjectName string   // Table or index name
-	Columns    []string // Affected columns
-	Flags      []string // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
-	IndexType  string   // btree, gin, gist, hash (CREATE INDEX only)
+	Type          DDLActionType
+	ObjectName    string      // Unqualified table/index/object name
+	Schema        string      // Optional schema qualifier
+	Columns       []string    // Affected columns
+	ColumnDetails []DDLColumn // Column metadata (CREATE TABLE)
+	Flags         []string    // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
+	IndexType     string      // btree, gin, gist, hash (CREATE INDEX only)
 }
 
 // SubqueryRef records metadata for subqueries discovered in FROM or set operations.

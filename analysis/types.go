@@ -172,13 +172,23 @@ type SQLColumnUsage struct {
 	Side       string
 }
 
+// SQLDDLColumn describes column-level metadata extracted from CREATE TABLE statements.
+type SQLDDLColumn struct {
+	Name     string
+	Type     string
+	Nullable bool
+	Default  string
+}
+
 // SQLDDLAction describes a single DDL operation in the analysis result.
 type SQLDDLAction struct {
-	Type       string
-	ObjectName string
-	Columns    []string
-	Flags      []string
-	IndexType  string
+	Type          string
+	ObjectName    string
+	Schema        string
+	Columns       []string
+	ColumnDetails []SQLDDLColumn
+	Flags         []string
+	IndexType     string
 }
 
 // SQLAnalysis is a standalone DTO representing the parsed SQL metadata.

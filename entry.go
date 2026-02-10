@@ -73,6 +73,11 @@ func ParseSQL(sql string) (*ParsedQuery, error) {
 		if err := populateMerge(res, mainStmt.Mergestmt(), stream); err != nil {
 			return nil, err
 		}
+	case mainStmt.Createstmt() != nil:
+		res.Command = QueryCommandDDL
+		if err := populateCreateTable(res, mainStmt.Createstmt(), stream); err != nil {
+			return nil, err
+		}
 	case mainStmt.Dropstmt() != nil:
 		res.Command = QueryCommandDDL
 		if err := populateDropStmt(res, mainStmt.Dropstmt(), stream); err != nil {
