@@ -72,11 +72,31 @@ func TestIR_UtilitySetValueForms(t *testing.T) {
 func TestIR_UtilityShowReset(t *testing.T) {
 	tests := []string{
 		"SHOW search_path;",
+		"SHOW search_path",
 		"SHOW ALL;",
+		"SHOW ALL",
 		"SHOW server_version;",
 		"RESET client_min_messages;",
 		"RESET ALL;",
 		"RESET TIME ZONE;",
+		"RESET TIME ZONE",
+	}
+
+	for _, sql := range tests {
+		t.Run(sql, func(t *testing.T) {
+			assertUnknownUtility(t, sql)
+		})
+	}
+}
+
+// TestIR_UtilityAdditionalValidForms covers other utility statement shapes that
+// should still parse as UNKNOWN.
+func TestIR_UtilityAdditionalValidForms(t *testing.T) {
+	tests := []string{
+		"SET ROLE postgres;",
+		"SET SESSION AUTHORIZATION postgres;",
+		"SET search_path FROM CURRENT;",
+		"ALTER SYSTEM SET client_min_messages = warning;",
 	}
 
 	for _, sql := range tests {
@@ -108,6 +128,10 @@ func TestIR_UtilityInvalidStatementsReturnError(t *testing.T) {
 		"SET LOCAL SESSION foo = warning",
 		"SET = warning",
 		"SET log_min_messages == warning",
+		"SET ROLE",
+		"SET SESSION AUTHORIZATION",
+		"SET search_path FROM",
+		"ALTER SYSTEM SET client_min_messages =",
 		"SHOW",
 		"SHOW ;",
 		"SHOW ALL extra",
