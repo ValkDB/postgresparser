@@ -25,19 +25,17 @@ These statements are recognized by the parser and return `Command = "UNKNOWN"` w
 
 | Statement | Notes |
 |-----------|-------|
-| `SET` | Includes `SET parameter = value`, `SET SESSION`, `SET LOCAL`. Values that are PL/pgSQL log-level tokens (`WARNING`, `NOTICE`, `DEBUG`, `INFO`, `EXCEPTION`, `ERROR`) are handled gracefully via error recovery. Common in `pg_dump` output. |
+| `SET` | Includes `SET parameter = value`, `SET SESSION`, `SET LOCAL`, `SET ... TO ...`, `SET ... FROM CURRENT`, and `ALTER SYSTEM SET ...`. PL/pgSQL log-level tokens (`WARNING`, `NOTICE`, `DEBUG`, `INFO`, `EXCEPTION`, `ERROR`) are parsed natively. Common in `pg_dump` output. |
 | `SHOW` | `SHOW parameter`, `SHOW ALL` |
 | `RESET` | `RESET parameter`, `RESET ALL` |
 
 ### How graceful handling works
 
-The ANTLR grammar does not fully cover all valid SET value tokens (for example `WARNING`, which is a reserved lexer token used in PL/pgSQL RAISE but not referenced in the parser rules for SET values).
+Utility statements are handled directly by the ANTLR grammar and parser dispatch.
 
-- `SET <parameter> = <log level>` is recovered intentionally (returned as `QueryCommandUnknown` without a parse error) when:
-  - `<log level>` is one of `WARNING`, `NOTICE`, `DEBUG`, `INFO`, `EXCEPTION`, or `ERROR`
-  - parser errors point at the RHS log-level token (not elsewhere in the statement)
-- This recovery also covers `SET SESSION` / `SET LOCAL` (single optional scope keyword), `=` / `TO`, and whitespace variants, and applies only to single statements with valid SET structure.
-- All other `SET` / `SHOW` / `RESET` forms follow normal parse behavior: valid syntax returns `UNKNOWN`, invalid syntax returns `ParseErrors`.
+- `SET <parameter> = <log level>` with `<log level>` in `WARNING`, `NOTICE`, `DEBUG`, `INFO`, `EXCEPTION`, `ERROR` is parsed natively and returned as `UNKNOWN`.
+- `SET SESSION` / `SET LOCAL`, `=` / `TO`, and whitespace variants follow normal parse behavior.
+- `SHOW` / `RESET` valid syntax returns `UNKNOWN`; invalid syntax returns `ParseErrors`.
 
 ## Unsupported Statements
 
