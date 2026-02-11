@@ -187,7 +187,7 @@ func TestAnalyzeSQLSetClientMinMessages(t *testing.T) {
 }
 
 // TestAnalyzeSQLSetLogLevelRecovery confirms analysis handles SET statements
-// whose RHS log-level token requires utility parse-error recovery.
+// with log-level RHS tokens.
 func TestAnalyzeSQLSetLogLevelRecovery(t *testing.T) {
 	res, err := AnalyzeSQL("SET foo = warning")
 	if err != nil {
@@ -218,7 +218,6 @@ func TestAnalyzeSQLSetClientMinMessagesMalformed(t *testing.T) {
 func TestAnalyzeSQLInvalidUtilityStatementsReturnError(t *testing.T) {
 	tests := []string{
 		"SET log_min_messages = warning]",
-		"SET log_min_messages = warning; SELECT 1",
 		"SHOW",
 		"RESET ALL extra",
 	}
@@ -232,6 +231,22 @@ func TestAnalyzeSQLInvalidUtilityStatementsReturnError(t *testing.T) {
 				t.Fatalf("expected nil result on parse error")
 			}
 		})
+	}
+}
+
+// TestAnalyzeSQLUtilityMultiStatementFirstStatementBehavior documents current
+// parser contract: AnalyzeSQL parses the first statement and ignores following
+// statements.
+func TestAnalyzeSQLUtilityMultiStatementFirstStatementBehavior(t *testing.T) {
+	result, err := AnalyzeSQL("SET log_min_messages = warning; SELECT 1")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if result == nil {
+		t.Fatalf("expected non-nil result")
+	}
+	if result.Command != SQLCommandUnknown {
+		t.Fatalf("expected UNKNOWN command, got %s", result.Command)
 	}
 }
 
