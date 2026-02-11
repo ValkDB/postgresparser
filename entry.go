@@ -25,6 +25,12 @@ func ParseSQL(sql string) (*ParsedQuery, error) {
 
 	root := parser.Root()
 	if len(errListener.errs) > 0 {
+		if shouldRecoverUtilityParseError(cleanSQL, errListener.errs) {
+			return &ParsedQuery{
+				Command: QueryCommandUnknown,
+				RawSQL:  cleanSQL,
+			}, nil
+		}
 		return nil, &ParseErrors{SQL: cleanSQL, Errors: errListener.errs}
 	}
 	if root == nil || root.Stmtblock() == nil {

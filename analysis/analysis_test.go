@@ -171,6 +171,70 @@ WHERE o.status = 'open'`
 	}
 }
 
+// TestAnalyzeSQLSetClientMinMessages confirms the analysis layer handles SET
+// with grammar-unfriendly log-level tokens gracefully.
+func TestAnalyzeSQLSetClientMinMessages(t *testing.T) {
+	res, err := AnalyzeSQL("SET client_min_messages = warning")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected non-nil result")
+	}
+	if res.Command != SQLCommandUnknown {
+		t.Fatalf("expected UNKNOWN command, got %s", res.Command)
+	}
+}
+
+// TestAnalyzeSQLSetLogLevelRecovery confirms analysis handles SET statements
+// whose RHS log-level token requires utility parse-error recovery.
+func TestAnalyzeSQLSetLogLevelRecovery(t *testing.T) {
+	res, err := AnalyzeSQL("SET foo = warning")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected non-nil result")
+	}
+	if res.Command != SQLCommandUnknown {
+		t.Fatalf("expected UNKNOWN command, got %s", res.Command)
+	}
+}
+
+// TestAnalyzeSQLSetClientMinMessagesMalformed verifies malformed client_min_messages
+// statements still return parse errors.
+func TestAnalyzeSQLSetClientMinMessagesMalformed(t *testing.T) {
+	result, err := AnalyzeSQL("SET client_min_messages = warning]")
+	if err == nil {
+		t.Fatalf("expected parse error, got result: %+v", result)
+	}
+	if result != nil {
+		t.Fatalf("expected nil result on parse error")
+	}
+}
+
+// TestAnalyzeSQLInvalidUtilityStatementsReturnError ensures malformed utility SQL
+// is never silently accepted as UNKNOWN.
+func TestAnalyzeSQLInvalidUtilityStatementsReturnError(t *testing.T) {
+	tests := []string{
+		"SET log_min_messages = warning]",
+		"SET log_min_messages = warning; SELECT 1",
+		"SHOW",
+		"RESET ALL extra",
+	}
+	for _, sql := range tests {
+		t.Run(sql, func(t *testing.T) {
+			result, err := AnalyzeSQL(sql)
+			if err == nil {
+				t.Fatalf("expected parse error, got result: %+v", result)
+			}
+			if result != nil {
+				t.Fatalf("expected nil result on parse error")
+			}
+		})
+	}
+}
+
 // TestAnalyzeSQLParseError verifies that invalid SQL returns an error.
 func TestAnalyzeSQLParseError(t *testing.T) {
 	result, err := AnalyzeSQL("SELECT * FROM (SELECT 1")

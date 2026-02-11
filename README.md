@@ -66,6 +66,17 @@ Handles the SQL you actually write in production:
 
 IR field reference: [ParsedQuery IR Reference](docs/parsed-query.md)
 
+## Supported SQL Statements
+
+See [docs/supported-statements.md](./docs/supported-statements.md) for full details on parsed commands, graceful handling (e.g. SET/SHOW/RESET), and what's currently UNKNOWN or unsupported.
+
+| Category | Statements | Status |
+|----------|-----------|--------|
+| **DML** | SELECT, INSERT, UPDATE, DELETE, MERGE | Full IR extraction |
+| **DDL** | CREATE TABLE, ALTER TABLE, DROP TABLE/INDEX, CREATE INDEX, TRUNCATE | Full IR extraction |
+| **Utility** | SET, SHOW, RESET | Graceful — returns `UNKNOWN`, no error |
+| **Other** | GRANT, REVOKE, CREATE VIEW/FUNCTION/TRIGGER, COPY, EXPLAIN, VACUUM, BEGIN/COMMIT/ROLLBACK, etc. | Not yet supported — may error or return `UNKNOWN` |
+
 ## Analysis
 
 The `analysis` subpackage provides higher-level intelligence on top of the IR:

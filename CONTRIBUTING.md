@@ -53,6 +53,17 @@ If you modify the grammar files in `grammar/`, regenerate the lexer and parser:
 antlr4 -Dlanguage=Go -visitor -listener -package gen -o gen grammar/PostgreSQLLexer.g4 grammar/PostgreSQLParser.g4
 ```
 
+If `antlr4` is not installed locally, you can regenerate with Docker (ANTLR 4.13.1):
+
+```bash
+docker run --rm --user "$(id -u)":"$(id -g)" \
+  -v "$PWD":/work -w /work \
+  --entrypoint java any0ne22/antlr4 \
+  -jar /usr/local/lib/antlr4-tool.jar \
+  -Dlanguage=Go -visitor -listener -package gen -Xexact-output-dir \
+  -o gen grammar/PostgreSQLLexer.g4 grammar/PostgreSQLParser.g4
+```
+
 Do not manually edit files in the `gen/` directory.
 
 ## Guidelines

@@ -316,6 +316,12 @@ boolean_or_string_
     : TRUE_P
     | FALSE_P
     | ON
+    | DEBUG
+    | INFO
+    | NOTICE
+    | WARNING
+    | EXCEPTION
+    | ERROR
     | nonreservedword_or_sconst
     ;
 
