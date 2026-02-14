@@ -10,7 +10,8 @@ import (
 	"github.com/valkdb/postgresparser/gen"
 )
 
-// populateCreateTable handles CREATE TABLE metadata extraction (table + columns).
+// populateCreateTable handles CREATE TABLE metadata extraction (table + columns)
+// and enforces table-level PRIMARY KEY columns as Nullable=false.
 func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens antlr.TokenStream) error {
 	if ctx == nil {
 		return fmt.Errorf("create table statement: %w", ErrNilContext)
@@ -49,13 +50,21 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 	}
 
 	if opts := ctx.Opttableelementlist(); opts != nil && opts.Tableelementlist() != nil {
-		for _, tableElem := range opts.Tableelementlist().AllTableelement() {
+		tableElems := opts.Tableelementlist().AllTableelement()
+		action.Columns = make([]string, 0, len(tableElems))
+		action.ColumnDetails = make([]DDLColumn, 0, len(tableElems))
+		primaryKeyCols := collectCreateTablePrimaryKeyColumns(tableElems)
+		for _, tableElem := range tableElems {
 			if tableElem == nil || tableElem.ColumnDef() == nil {
 				continue
 			}
 			col := extractCreateTableColumn(tableElem.ColumnDef(), tokens)
 			if col.Name == "" {
 				continue
+			}
+			if _, ok := primaryKeyCols[normalizeCreateTableColumnName(col.Name)]; ok {
+				// A table-level PRIMARY KEY also implies NOT NULL.
+				col.Nullable = false
 			}
 			action.Columns = append(action.Columns, col.Name)
 			action.ColumnDetails = append(action.ColumnDetails, col)
@@ -105,6 +114,37 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 		}
 	}
 	return col
+}
+
+// collectCreateTablePrimaryKeyColumns extracts column names referenced by table-level PRIMARY KEY constraints.
+func collectCreateTablePrimaryKeyColumns(tableElems []gen.ITableelementContext) map[string]struct{} {
+	pkCols := make(map[string]struct{}, len(tableElems))
+	for _, tableElem := range tableElems {
+		if tableElem == nil || tableElem.Tableconstraint() == nil {
+			continue
+		}
+		constraint := tableElem.Tableconstraint().Constraintelem()
+		if constraint == nil || constraint.PRIMARY() == nil || constraint.KEY() == nil || constraint.Columnlist() == nil {
+			continue
+		}
+		for _, colElem := range constraint.Columnlist().AllColumnElem() {
+			pkCols[normalizeCreateTableColumnName(colElem.Colid().GetText())] = struct{}{}
+		}
+	}
+	return pkCols
+}
+
+// normalizeCreateTableColumnName keeps PostgreSQL identifier semantics for matching:
+// quoted identifiers keep case, while unquoted identifiers are case-insensitive.
+func normalizeCreateTableColumnName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	if len(trimmed) >= 2 && strings.HasPrefix(trimmed, `"`) && strings.HasSuffix(trimmed, `"`) {
+		return strings.ReplaceAll(trimmed[1:len(trimmed)-1], `""`, `"`)
+	}
+	return strings.ToLower(trimIdentQuotes(trimmed))
 }
 
 // populateDropStmt handles DROP TABLE, DROP INDEX, and DROP INDEX CONCURRENTLY.
