@@ -554,6 +554,21 @@ func TestIR_DDL_AlterTableSchemaQualified(t *testing.T) {
 	assert.Equal(t, "users", act.ObjectName, "object name mismatch")
 }
 
+func TestIR_DDL_AlterTableOnlySchemaQualifiedTableRef(t *testing.T) {
+	sql := `ALTER TABLE ONLY public.schema_migrations
+    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.Tables, 1, "tables count mismatch")
+	assert.Equal(t, "public", ir.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "schema_migrations", ir.Tables[0].Name, "table name mismatch")
+	assert.Equal(t, "ONLY public.schema_migrations", ir.Tables[0].Raw, "table raw mismatch")
+
+	// ADD CONSTRAINT is currently skipped in DDL action extraction.
+	assert.Empty(t, ir.DDLActions, "expected no DDL actions for ADD CONSTRAINT")
+}
+
 func TestIR_DDL_AlterTableMultiAction(t *testing.T) {
 	ir := parseAssertNoError(t, "ALTER TABLE users ADD COLUMN status text, DROP COLUMN legacy")
 	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
