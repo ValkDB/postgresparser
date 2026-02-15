@@ -84,6 +84,15 @@ ORDER BY d.budget DESC`,
 )`,
 	},
 	{
+		Name: "DDL_CreateTable_TablePK_NoSchema_Issue12",
+		SQL: `CREATE TABLE accounts (
+    id integer,
+    tenant_id integer,
+    payload text,
+    PRIMARY KEY (id, tenant_id)
+)`,
+	},
+	{
 		Name: "ComplexUpdate",
 		SQL: `UPDATE inventory
 SET quantity = quantity - oi.qty,

@@ -278,6 +278,62 @@ func TestIR_DDL_CreateTableIfNotExists(t *testing.T) {
 	assert.Equal(t, DDLColumn{Name: "id", Type: "integer", Nullable: true}, act.ColumnDetails[0], "column mismatch")
 }
 
+func TestIR_DDL_CreateTable_TablePrimaryKeySetsNullableFalse(t *testing.T) {
+	sql := `CREATE TABLE public.accounts (
+    id integer,
+    tenant_id integer,
+    payload text,
+    CONSTRAINT accounts_pk PRIMARY KEY (id, tenant_id)
+);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLCreateTable, act.Type, "expected CREATE_TABLE")
+	assert.Equal(t, "accounts", act.ObjectName, "object name mismatch")
+	assert.Equal(t, "public", act.Schema, "schema mismatch")
+	assert.Equal(t, []string{"id", "tenant_id", "payload"}, act.Columns, "column names mismatch")
+	assert.Equal(t, []DDLColumn{
+		{Name: "id", Type: "integer", Nullable: false},
+		{Name: "tenant_id", Type: "integer", Nullable: false},
+		{Name: "payload", Type: "text", Nullable: true},
+	}, act.ColumnDetails, "column details mismatch")
+
+	require.Len(t, ir.Tables, 1, "tables count mismatch")
+	assert.Equal(t, "public", ir.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "accounts", ir.Tables[0].Name, "table name mismatch")
+}
+
+func TestIR_DDL_CreateTable_TablePrimaryKeySetsNullableFalse_NoSchema(t *testing.T) {
+	sql := `CREATE TABLE accounts (
+    id integer,
+    tenant_id integer,
+    payload text,
+    PRIMARY KEY (id, tenant_id)
+);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLCreateTable, act.Type, "expected CREATE_TABLE")
+	assert.Equal(t, "accounts", act.ObjectName, "object name mismatch")
+	assert.Empty(t, act.Schema, "schema mismatch")
+	assert.Equal(t, []string{"id", "tenant_id", "payload"}, act.Columns, "column names mismatch")
+	assert.Equal(t, []DDLColumn{
+		{Name: "id", Type: "integer", Nullable: false},
+		{Name: "tenant_id", Type: "integer", Nullable: false},
+		{Name: "payload", Type: "text", Nullable: true},
+	}, act.ColumnDetails, "column details mismatch")
+
+	require.Len(t, ir.Tables, 1, "tables count mismatch")
+	assert.Empty(t, ir.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "accounts", ir.Tables[0].Name, "table name mismatch")
+}
+
 func TestIR_DDL_CreateTableTypeCoverage(t *testing.T) {
 	sql := `CREATE TABLE public.type_matrix (
     c_smallint smallint,

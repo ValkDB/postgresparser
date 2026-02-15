@@ -345,6 +345,108 @@ func TestAnalyzeSQL_DDL_CreateTable(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse(t *testing.T) {
+	sql := `CREATE TABLE public.accounts (
+    id integer,
+    tenant_id integer,
+    payload text,
+    CONSTRAINT accounts_pk PRIMARY KEY (id, tenant_id)
+);`
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d: %+v", len(res.DDLActions), res.DDLActions)
+	}
+
+	act := res.DDLActions[0]
+	if act.Type != "CREATE_TABLE" {
+		t.Fatalf("expected CREATE_TABLE, got %s", act.Type)
+	}
+	if act.ObjectName != "accounts" {
+		t.Fatalf("expected object accounts, got %q", act.ObjectName)
+	}
+	if act.Schema != "public" {
+		t.Fatalf("expected schema public, got %q", act.Schema)
+	}
+
+	want := []SQLDDLColumn{
+		{Name: "id", Type: "integer", Nullable: false},
+		{Name: "tenant_id", Type: "integer", Nullable: false},
+		{Name: "payload", Type: "text", Nullable: true},
+	}
+	if len(act.ColumnDetails) != len(want) {
+		t.Fatalf("expected %d column details, got %d: %+v", len(want), len(act.ColumnDetails), act.ColumnDetails)
+	}
+	for i := range want {
+		if act.ColumnDetails[i] != want[i] {
+			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
+		}
+	}
+
+	if len(res.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
+	}
+	if res.Tables[0].Schema != "public" || res.Tables[0].Name != "accounts" {
+		t.Fatalf("expected table public.accounts, got %+v", res.Tables[0])
+	}
+}
+
+func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse_NoSchema(t *testing.T) {
+	sql := `CREATE TABLE accounts (
+    id integer,
+    tenant_id integer,
+    payload text,
+    PRIMARY KEY (id, tenant_id)
+);`
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d: %+v", len(res.DDLActions), res.DDLActions)
+	}
+
+	act := res.DDLActions[0]
+	if act.Type != "CREATE_TABLE" {
+		t.Fatalf("expected CREATE_TABLE, got %s", act.Type)
+	}
+	if act.ObjectName != "accounts" {
+		t.Fatalf("expected object accounts, got %q", act.ObjectName)
+	}
+	if act.Schema != "" {
+		t.Fatalf("expected empty schema, got %q", act.Schema)
+	}
+
+	want := []SQLDDLColumn{
+		{Name: "id", Type: "integer", Nullable: false},
+		{Name: "tenant_id", Type: "integer", Nullable: false},
+		{Name: "payload", Type: "text", Nullable: true},
+	}
+	if len(act.ColumnDetails) != len(want) {
+		t.Fatalf("expected %d column details, got %d: %+v", len(want), len(act.ColumnDetails), act.ColumnDetails)
+	}
+	for i := range want {
+		if act.ColumnDetails[i] != want[i] {
+			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
+		}
+	}
+
+	if len(res.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
+	}
+	if res.Tables[0].Schema != "" || res.Tables[0].Name != "accounts" {
+		t.Fatalf("expected table accounts with empty schema, got %+v", res.Tables[0])
+	}
+}
+
 func TestAnalyzeSQL_DDL_CreateTableTypeCoverage(t *testing.T) {
 	sql := `CREATE TABLE public.type_matrix (
     c_smallint smallint,
