@@ -247,6 +247,24 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 			wantCols:   1,
 			wantTable:  "users",
 		},
+		{
+			name:       "schema-qualified index and table",
+			sql:        "CREATE UNIQUE INDEX public.idx_users_email ON public.users (email)",
+			wantObject: "idx_users_email",
+			wantSchema: "public",
+			wantCols:   1,
+			wantFlags:  []string{"UNIQUE"},
+			wantTable:  "users",
+		},
+		{
+			name:       "IF NOT EXISTS with schema-qualified index and table",
+			sql:        "CREATE INDEX IF NOT EXISTS public.idx_users_email ON public.users (email)",
+			wantObject: "idx_users_email",
+			wantSchema: "public",
+			wantCols:   1,
+			wantFlags:  []string{"IF_NOT_EXISTS"},
+			wantTable:  "users",
+		},
 	}
 
 	for _, tc := range tests {

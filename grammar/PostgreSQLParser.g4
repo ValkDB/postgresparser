@@ -1834,7 +1834,7 @@ defacl_privilege_target
 indexstmt
     : CREATE unique_? INDEX concurrently_? index_name_? ON relation_expr access_method_clause? OPEN_PAREN index_params CLOSE_PAREN include_?
         reloptions_? opttablespace? where_clause?
-    | CREATE unique_? INDEX concurrently_? IF_P NOT EXISTS name ON relation_expr access_method_clause? OPEN_PAREN index_params CLOSE_PAREN
+    | CREATE unique_? INDEX concurrently_? IF_P NOT EXISTS index_name_ ON relation_expr access_method_clause? OPEN_PAREN index_params CLOSE_PAREN
         include_? reloptions_? opttablespace? where_clause?
     ;
 
@@ -1853,7 +1853,7 @@ concurrently_
     ;
 
 index_name_
-    : name
+    : qualified_name
     
     ;
 
