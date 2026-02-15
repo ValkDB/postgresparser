@@ -742,6 +742,32 @@ func TestAnalyzeSQL_DDL_AlterTableSchemaQualified(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSQL_DDL_AlterTableOnlySchemaQualifiedTableRef(t *testing.T) {
+	sql := `ALTER TABLE ONLY public.schema_migrations
+    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);`
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
+	}
+	if res.Tables[0].Schema != "public" || res.Tables[0].Name != "schema_migrations" {
+		t.Fatalf("expected table public.schema_migrations, got %+v", res.Tables[0])
+	}
+	if res.Tables[0].Raw != "ONLY public.schema_migrations" {
+		t.Fatalf("expected raw table text with ONLY, got %q", res.Tables[0].Raw)
+	}
+
+	// ADD CONSTRAINT is currently skipped in DDL action extraction.
+	if len(res.DDLActions) != 0 {
+		t.Fatalf("expected no DDL actions for ADD CONSTRAINT, got %+v", res.DDLActions)
+	}
+}
+
 // TestAnalyzeSQL_DDL_AlterTableMultiAction checks ALTER TABLE with combined ADD and DROP actions.
 func TestAnalyzeSQL_DDL_AlterTableMultiAction(t *testing.T) {
 	res, err := AnalyzeSQL("ALTER TABLE users ADD COLUMN status text, DROP COLUMN legacy")
