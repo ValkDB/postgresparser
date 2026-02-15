@@ -247,6 +247,41 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 			wantCols:   1,
 			wantTable:  "users",
 		},
+		{
+			name:       "schema-qualified index and table",
+			sql:        "CREATE UNIQUE INDEX public.idx_users_email ON public.users (email)",
+			wantObject: "idx_users_email",
+			wantSchema: "public",
+			wantCols:   1,
+			wantFlags:  []string{"UNIQUE"},
+			wantTable:  "users",
+		},
+		{
+			name:       "schema-qualified index on unqualified table",
+			sql:        "CREATE INDEX analytics.idx_users_email ON users (email)",
+			wantObject: "idx_users_email",
+			wantSchema: "analytics",
+			wantCols:   1,
+			wantTable:  "users",
+		},
+		{
+			name:       "IF NOT EXISTS with schema-qualified index and table",
+			sql:        "CREATE INDEX IF NOT EXISTS public.idx_users_email ON public.users (email)",
+			wantObject: "idx_users_email",
+			wantSchema: "public",
+			wantCols:   1,
+			wantFlags:  []string{"IF_NOT_EXISTS"},
+			wantTable:  "users",
+		},
+		{
+			name:       "quoted schema-qualified index and table",
+			sql:        `CREATE UNIQUE INDEX "analytics"."IdxUsersEmail" ON "public"."users" ("email")`,
+			wantObject: `"IdxUsersEmail"`,
+			wantSchema: `"analytics"`,
+			wantCols:   1,
+			wantFlags:  []string{"UNIQUE"},
+			wantTable:  `"users"`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -286,6 +321,37 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAnalyzeSQL_DDL_CreateIndex_QualifiedIndexNameNormalization(t *testing.T) {
+	res, err := AnalyzeSQL("CREATE INDEX analytics.idx_users_email ON public.users (email)")
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d", len(res.DDLActions))
+	}
+
+	act := res.DDLActions[0]
+	if act.Type != "CREATE_INDEX" {
+		t.Fatalf("expected CREATE_INDEX, got %s", act.Type)
+	}
+	if act.ObjectName != "idx_users_email" {
+		t.Fatalf("expected object idx_users_email, got %q", act.ObjectName)
+	}
+	if act.Schema != "analytics" {
+		t.Fatalf("expected index schema analytics, got %q", act.Schema)
+	}
+
+	if len(res.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %+v", res.Tables)
+	}
+	if res.Tables[0].Schema != "public" || res.Tables[0].Name != "users" {
+		t.Fatalf("expected table public.users, got %+v", res.Tables[0])
 	}
 }
 

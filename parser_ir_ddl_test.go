@@ -211,6 +211,41 @@ func TestIR_DDL_CreateIndex(t *testing.T) {
 			wantCols:   1,
 			wantTables: 1,
 		},
+		{
+			name:       "schema-qualified index and table",
+			sql:        "CREATE UNIQUE INDEX public.idx_users_email ON public.users (email)",
+			wantObject: "idx_users_email",
+			wantSchema: "public",
+			wantCols:   1,
+			wantFlags:  []string{"UNIQUE"},
+			wantTables: 1,
+		},
+		{
+			name:       "schema-qualified index on unqualified table",
+			sql:        "CREATE INDEX analytics.idx_users_email ON users (email)",
+			wantObject: "idx_users_email",
+			wantSchema: "analytics",
+			wantCols:   1,
+			wantTables: 1,
+		},
+		{
+			name:       "IF NOT EXISTS with schema-qualified index and table",
+			sql:        "CREATE INDEX IF NOT EXISTS public.idx_users_email ON public.users (email)",
+			wantObject: "idx_users_email",
+			wantSchema: "public",
+			wantCols:   1,
+			wantFlags:  []string{"IF_NOT_EXISTS"},
+			wantTables: 1,
+		},
+		{
+			name:       "quoted schema-qualified index and table",
+			sql:        `CREATE UNIQUE INDEX "analytics"."IdxUsersEmail" ON "public"."users" ("email")`,
+			wantObject: `"IdxUsersEmail"`,
+			wantSchema: `"analytics"`,
+			wantCols:   1,
+			wantFlags:  []string{"UNIQUE"},
+			wantTables: 1,
+		},
 	}
 
 	for _, tc := range tests {
@@ -234,6 +269,21 @@ func TestIR_DDL_CreateIndex(t *testing.T) {
 			assert.Len(t, ir.Tables, tc.wantTables, "tables count mismatch")
 		})
 	}
+}
+
+func TestIR_DDL_CreateIndex_QualifiedIndexNameNormalization(t *testing.T) {
+	ir := parseAssertNoError(t, "CREATE INDEX analytics.idx_users_email ON public.users (email)")
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLCreateIndex, act.Type, "expected CREATE_INDEX")
+	assert.Equal(t, "idx_users_email", act.ObjectName, "object name mismatch")
+	assert.Equal(t, "analytics", act.Schema, "index schema should come from index name")
+
+	require.Len(t, ir.Tables, 1, "tables count mismatch")
+	assert.Equal(t, "public", ir.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "users", ir.Tables[0].Name, "table name mismatch")
 }
 
 func TestIR_DDL_CreateTable(t *testing.T) {

@@ -385,14 +385,7 @@ func populateCreateIndex(result *ParsedQuery, ctx gen.IIndexstmtContext, tokens 
 
 	indexRaw := ""
 	if idx := ctx.Index_name_(); idx != nil {
-		if idx.Name() != nil {
-			if prc, ok := idx.Name().(antlr.ParserRuleContext); ok {
-				indexRaw = strings.TrimSpace(ctxText(tokens, prc))
-			}
-		}
-	}
-	if indexRaw == "" && ctx.Name() != nil {
-		if prc, ok := ctx.Name().(antlr.ParserRuleContext); ok {
+		if prc, ok := idx.(antlr.ParserRuleContext); ok {
 			indexRaw = strings.TrimSpace(ctxText(tokens, prc))
 		}
 	}
