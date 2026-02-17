@@ -195,6 +195,8 @@ type SQLDDLAction struct {
 type SQLParseWarningCode string
 
 const (
+	// SQLParseWarningCodeSyntaxError indicates ANTLR reported a syntax error
+	// while parsing a statement in batch mode.
 	SQLParseWarningCodeSyntaxError SQLParseWarningCode = "SYNTAX_ERROR"
 )
 

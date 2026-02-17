@@ -98,6 +98,8 @@ func ParseSQLStrict(sql string) (*ParsedQuery, error) {
 	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL)
 }
 
+// parseState holds the shared ANTLR parse artifacts produced by prepareParseState
+// for reuse across the single- and multi-statement entry points.
 type parseState struct {
 	cleanSQL     string
 	stream       antlr.TokenStream
@@ -271,6 +273,8 @@ func statementIndexForSyntaxError(stmts []gen.IStmtContext, syntaxErr SyntaxErro
 	return -1
 }
 
+// statementTokenBounds returns the start and stop token indices of a statement
+// context, or (-1, -1) if unavailable.
 func statementTokenBounds(stmt gen.IStmtContext) (int, int) {
 	if stmt == nil {
 		return -1, -1
@@ -283,6 +287,8 @@ func statementTokenBounds(stmt gen.IStmtContext) (int, int) {
 	return start.GetTokenIndex(), stop.GetTokenIndex()
 }
 
+// statementLineBounds returns the start and stop line numbers of a statement
+// context, or (0, 0) if unavailable.
 func statementLineBounds(stmt gen.IStmtContext) (int, int) {
 	if stmt == nil {
 		return 0, 0
