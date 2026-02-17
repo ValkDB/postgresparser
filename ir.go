@@ -233,11 +233,9 @@ type StatementParseResult struct {
 }
 
 // ParseBatchResult is returned by ParseSQLAll and includes one parse result per
-// input statement plus aggregate counters.
+// input statement plus a failure flag.
 type ParseBatchResult struct {
-	Statements       []StatementParseResult
-	TotalStatements  int
-	ParsedStatements int
+	Statements []StatementParseResult
 	// HasFailures is true when at least one statement has a nil Query or any Warnings.
 	HasFailures bool
 }

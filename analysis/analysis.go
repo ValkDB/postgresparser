@@ -44,10 +44,8 @@ func convertBatchResult(batch *postgresparser.ParseBatchResult) *SQLAnalysisBatc
 		return nil
 	}
 	res := &SQLAnalysisBatchResult{
-		Statements:       convertStatementResults(batch.Statements),
-		TotalStatements:  batch.TotalStatements,
-		ParsedStatements: batch.ParsedStatements,
-		HasFailures:      batch.HasFailures,
+		Statements:  convertStatementResults(batch.Statements),
+		HasFailures: batch.HasFailures,
 	}
 	return res
 }

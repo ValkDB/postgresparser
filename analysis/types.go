@@ -243,11 +243,9 @@ type SQLStatementAnalysisResult struct {
 }
 
 // SQLAnalysisBatchResult contains one analysis result per input statement plus
-// aggregate counters.
+// a failure flag.
 type SQLAnalysisBatchResult struct {
-	Statements       []SQLStatementAnalysisResult
-	TotalStatements  int
-	ParsedStatements int
+	Statements []SQLStatementAnalysisResult
 	// HasFailures is true when at least one statement has a nil Query or any Warnings.
 	HasFailures bool
 }

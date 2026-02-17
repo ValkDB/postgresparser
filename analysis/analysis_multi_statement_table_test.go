@@ -98,52 +98,46 @@ func TestAnalyzeSQLAllTable(t *testing.T) {
 		name          string
 		sql           string
 		wantErrIs     error
-		wantTotal     int
-		wantParsed    int
+		wantStmtCount int
 		wantFailed    bool
 		wantCommands  []SQLCommand
 		wantWarnCodes [][]SQLParseWarningCode
 		assertBatch   func(t *testing.T, batch *SQLAnalysisBatchResult)
 	}{
 		{
-			name:         "single statement select",
-			sql:          "SELECT 1",
-			wantTotal:    1,
-			wantParsed:   1,
-			wantFailed:   false,
-			wantCommands: []SQLCommand{SQLCommandSelect},
+			name:          "single statement select",
+			sql:           "SELECT 1",
+			wantStmtCount: 1,
+			wantFailed:    false,
+			wantCommands:  []SQLCommand{SQLCommandSelect},
 		},
 		{
-			name:         "trailing semicolon",
-			sql:          "SELECT 1;",
-			wantTotal:    1,
-			wantParsed:   1,
-			wantFailed:   false,
-			wantCommands: []SQLCommand{SQLCommandSelect},
+			name:          "trailing semicolon",
+			sql:           "SELECT 1;",
+			wantStmtCount: 1,
+			wantFailed:    false,
+			wantCommands:  []SQLCommand{SQLCommandSelect},
 		},
 		{
-			name:         "trailing double semicolon",
-			sql:          "SELECT 1;;",
-			wantTotal:    1,
-			wantParsed:   1,
-			wantFailed:   false,
-			wantCommands: []SQLCommand{SQLCommandSelect},
+			name:          "trailing double semicolon",
+			sql:           "SELECT 1;;",
+			wantStmtCount: 1,
+			wantFailed:    false,
+			wantCommands:  []SQLCommand{SQLCommandSelect},
 		},
 		{
-			name:         "mixed multi statement",
-			sql:          "SET client_min_messages = warning; SELECT $1 AS value;",
-			wantTotal:    2,
-			wantParsed:   2,
-			wantFailed:   false,
-			wantCommands: []SQLCommand{SQLCommandUnknown, SQLCommandSelect},
+			name:          "mixed multi statement",
+			sql:           "SET client_min_messages = warning; SELECT $1 AS value;",
+			wantStmtCount: 2,
+			wantFailed:    false,
+			wantCommands:  []SQLCommand{SQLCommandUnknown, SQLCommandSelect},
 		},
 		{
-			name:         "two create table statements",
-			sql:          multiCreateTableSQLAnalysis,
-			wantTotal:    2,
-			wantParsed:   2,
-			wantFailed:   false,
-			wantCommands: []SQLCommand{SQLCommandDDL, SQLCommandDDL},
+			name:          "two create table statements",
+			sql:           multiCreateTableSQLAnalysis,
+			wantStmtCount: 2,
+			wantFailed:    false,
+			wantCommands:  []SQLCommand{SQLCommandDDL, SQLCommandDDL},
 			assertBatch: func(t *testing.T, batch *SQLAnalysisBatchResult) {
 				t.Helper()
 				require.Len(t, batch.Statements[0].Query.DDLActions, 1)
@@ -153,23 +147,21 @@ func TestAnalyzeSQLAllTable(t *testing.T) {
 			},
 		},
 		{
-			name:         "invalid sql single statement has statement warning",
-			sql:          "SELECT FROM",
-			wantTotal:    1,
-			wantParsed:   1,
-			wantFailed:   true,
-			wantCommands: []SQLCommand{SQLCommandSelect},
+			name:          "invalid sql single statement has statement warning",
+			sql:           "SELECT FROM",
+			wantStmtCount: 1,
+			wantFailed:    true,
+			wantCommands:  []SQLCommand{SQLCommandSelect},
 			wantWarnCodes: [][]SQLParseWarningCode{
 				{SQLParseWarningCodeSyntaxError},
 			},
 		},
 		{
-			name:         "invalid sql mid-batch warning is attached to statement index",
-			sql:          "SELECT 1;\nSELECT FROM;\nSELECT 2;",
-			wantTotal:    3,
-			wantParsed:   3,
-			wantFailed:   true,
-			wantCommands: []SQLCommand{SQLCommandSelect, SQLCommandSelect, SQLCommandSelect},
+			name:          "invalid sql mid-batch warning is attached to statement index",
+			sql:           "SELECT 1;\nSELECT FROM;\nSELECT 2;",
+			wantStmtCount: 3,
+			wantFailed:    true,
+			wantCommands:  []SQLCommand{SQLCommandSelect, SQLCommandSelect, SQLCommandSelect},
 			wantWarnCodes: [][]SQLParseWarningCode{
 				nil,
 				{SQLParseWarningCodeSyntaxError},
@@ -177,12 +169,11 @@ func TestAnalyzeSQLAllTable(t *testing.T) {
 			},
 		},
 		{
-			name:         "complex mixed statements",
-			sql:          `SELECT u.id, COUNT(o.id) AS order_count FROM users u LEFT JOIN orders o ON o.user_id = u.id WHERE u.active = true AND o.created_at > $1 GROUP BY u.id HAVING COUNT(o.id) > 1 ORDER BY order_count DESC LIMIT 10; UPDATE users SET status = 'active' WHERE id = $2 RETURNING id; DELETE FROM sessions WHERE expires_at < NOW();`,
-			wantTotal:    3,
-			wantParsed:   3,
-			wantFailed:   false,
-			wantCommands: []SQLCommand{SQLCommandSelect, SQLCommandUpdate, SQLCommandDelete},
+			name:          "complex mixed statements",
+			sql:           `SELECT u.id, COUNT(o.id) AS order_count FROM users u LEFT JOIN orders o ON o.user_id = u.id WHERE u.active = true AND o.created_at > $1 GROUP BY u.id HAVING COUNT(o.id) > 1 ORDER BY order_count DESC LIMIT 10; UPDATE users SET status = 'active' WHERE id = $2 RETURNING id; DELETE FROM sessions WHERE expires_at < NOW();`,
+			wantStmtCount: 3,
+			wantFailed:    false,
+			wantCommands:  []SQLCommand{SQLCommandSelect, SQLCommandUpdate, SQLCommandDelete},
 			assertBatch: func(t *testing.T, batch *SQLAnalysisBatchResult) {
 				t.Helper()
 				selectQ := batch.Statements[0].Query
@@ -228,10 +219,8 @@ func TestAnalyzeSQLAllTable(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, batch)
-			assert.Equal(t, tc.wantTotal, batch.TotalStatements)
-			assert.Equal(t, tc.wantParsed, batch.ParsedStatements)
 			assert.Equal(t, tc.wantFailed, batch.HasFailures)
-			require.Len(t, batch.Statements, tc.wantTotal)
+			require.Len(t, batch.Statements, tc.wantStmtCount)
 			for i := range batch.Statements {
 				assert.Equal(t, i+1, batch.Statements[i].Index)
 			}

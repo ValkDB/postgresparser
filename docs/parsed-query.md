@@ -34,8 +34,6 @@ It is not designed for:
   - `RawSQL`: statement-scoped SQL text.
   - `Query`: parsed IR when statement conversion succeeds (`nil` on failure).
   - `Warnings`: statement-scoped warnings (`SYNTAX_ERROR`).
-- `TotalStatements`: Number of statements detected in input.
-- `ParsedStatements`: Number of statements with non-`nil` `Query`.
 - `HasFailures`: `true` when any statement has a nil `Query` or any `Warnings`.
 
 ## Core Envelope

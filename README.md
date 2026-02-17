@@ -45,8 +45,7 @@ if err != nil {
     log.Fatal(err)
 }
 
-fmt.Println(batch.TotalStatements)  // 2
-fmt.Println(batch.ParsedStatements) // 2
+fmt.Println(len(batch.Statements))                              // 2
 fmt.Println(batch.Statements[0].Query.DDLActions[0].ObjectName) // "api_key"
 fmt.Println(batch.Statements[1].Query.DDLActions[0].ObjectName) // "sometable"
 ```

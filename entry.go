@@ -33,7 +33,6 @@ func ParseSQLAll(sql string) (*ParseBatchResult, error) {
 	}
 
 	statements := make([]StatementParseResult, len(state.stmts))
-	parsedCount := 0
 	for i, stmt := range state.stmts {
 		stmtSQL := statementText(state.stream, stmt)
 		statements[i] = StatementParseResult{
@@ -48,7 +47,6 @@ func ParseSQLAll(sql string) (*ParseBatchResult, error) {
 			continue
 		}
 		statements[i].Query = query
-		parsedCount++
 	}
 
 	for _, syntaxErr := range state.syntaxErrors {
@@ -67,21 +65,17 @@ func ParseSQLAll(sql string) (*ParseBatchResult, error) {
 		})
 	}
 
-	hasFailures := parsedCount != len(statements)
-	if !hasFailures {
-		for i := range statements {
-			if len(statements[i].Warnings) > 0 {
-				hasFailures = true
-				break
-			}
+	var hasFailures bool
+	for i := range statements {
+		if statements[i].Query == nil || len(statements[i].Warnings) > 0 {
+			hasFailures = true
+			break
 		}
 	}
 
 	return &ParseBatchResult{
-		Statements:       statements,
-		TotalStatements:  len(statements),
-		ParsedStatements: parsedCount,
-		HasFailures:      hasFailures,
+		Statements:  statements,
+		HasFailures: hasFailures,
 	}, nil
 }
 

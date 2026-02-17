@@ -20,7 +20,7 @@ SELECT 2;
 		log.Fatalf("parse failed: %v", err)
 	}
 
-	fmt.Printf("total=%d parsed=%d has_failures=%t\n", batch.TotalStatements, batch.ParsedStatements, batch.HasFailures)
+	fmt.Printf("statements=%d has_failures=%t\n", len(batch.Statements), batch.HasFailures)
 	for _, stmt := range batch.Statements {
 		failed := stmt.Query == nil
 		command := "<nil>"
