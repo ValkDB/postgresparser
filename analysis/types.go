@@ -246,7 +246,10 @@ type SQLAnalysisBatchResult struct {
 	Statements       []SQLStatementAnalysisResult
 	TotalStatements  int
 	ParsedStatements int
-	HasFailures      bool
+	// HasFailures is true when at least one statement could not produce a Query.
+	// Note: statements with syntax errors may still produce a Query via ANTLR
+	// error recovery; check SQLStatementAnalysisResult.Warnings for syntax issues.
+	HasFailures bool
 }
 
 // WhereCondition represents a single WHERE clause condition extracted from a query.
