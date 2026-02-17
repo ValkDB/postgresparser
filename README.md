@@ -94,7 +94,7 @@ Use the API variant that matches your input contract:
 - `ParseSQLAll(sql)` parses all statements and returns `ParseBatchResult` with one `Statements[i]` result per input statement (`Index`, `RawSQL`, `Query`, `Warnings`).
   - A statement failed conversion when `Statements[i].Query == nil`.
   - Correlation is deterministic: `Statements[i].Index` maps to source statement order.
-  - `HasFailures` is `true` when one or more statements failed IR conversion.
+  - `HasFailures` is `true` when any statement has a nil `Query` or any `Warnings`.
 - `ParseSQLStrict(sql)` requires exactly one statement and returns `ErrMultipleStatements` when input contains more than one.
 
 ## Supported SQL Statements

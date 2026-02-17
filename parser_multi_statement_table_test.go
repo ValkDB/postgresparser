@@ -155,7 +155,7 @@ func TestParseSQLAllTable(t *testing.T) {
 			sql:          "SELECT FROM",
 			wantTotal:    1,
 			wantParsed:   1,
-			wantFailed:   false,
+			wantFailed:   true,
 			wantCommands: []QueryCommand{QueryCommandSelect},
 			wantWarnCodes: [][]ParseWarningCode{
 				{ParseWarningCodeSyntaxError},
@@ -166,7 +166,7 @@ func TestParseSQLAllTable(t *testing.T) {
 			sql:          "SELECT 1;\nSELECT FROM;\nSELECT 2;",
 			wantTotal:    3,
 			wantParsed:   3,
-			wantFailed:   false,
+			wantFailed:   true,
 			wantCommands: []QueryCommand{QueryCommandSelect, QueryCommandSelect, QueryCommandSelect},
 			wantWarnCodes: [][]ParseWarningCode{
 				nil,

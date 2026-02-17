@@ -10,7 +10,7 @@ This example shows how to use `ParseSQLAll` to correlate parser output back to e
 - `Statements[i].RawSQL` is that statement's SQL text.
 - `Statements[i].Query` is the parsed IR (`nil` means that statement failed IR conversion).
 - `Statements[i].Warnings` are statement-scoped warnings (currently `SYNTAX_ERROR`).
-- `HasFailures` gives a quick batch-level boolean for any failed statement.
+- `HasFailures` is `true` when any statement has a nil `Query` or any `Warnings`.
 
 This gives deterministic correlation for mixed-success batches.
 

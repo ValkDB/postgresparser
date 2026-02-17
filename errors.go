@@ -9,7 +9,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 )
 
-// Sentinel errors returned by ParseSQL.
+// Sentinel errors returned by the SQL parsing functions.
 var (
 	// ErrNoStatements is returned when the input SQL contains no parseable statements.
 	ErrNoStatements = errors.New("no statements found")

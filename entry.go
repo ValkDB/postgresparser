@@ -24,9 +24,8 @@ func ParseSQL(sql string) (*ParsedQuery, error) {
 
 // ParseSQLAll parses all SQL statements in the input string and returns a
 // batch result containing one per-statement parse result in source order.
-// This API is best-effort and non-fail-fast for per-statement IR extraction.
-// Statement-level failures are represented by nil StatementParseResult.Query and
-// do not abort the batch.
+// Individual statement failures do not abort the batch; check
+// StatementParseResult.Query (nil on failure) and Warnings for details.
 func ParseSQLAll(sql string) (*ParseBatchResult, error) {
 	state, err := prepareParseState(sql, true)
 	if err != nil {
@@ -68,11 +67,21 @@ func ParseSQLAll(sql string) (*ParseBatchResult, error) {
 		})
 	}
 
+	hasFailures := parsedCount != len(statements)
+	if !hasFailures {
+		for i := range statements {
+			if len(statements[i].Warnings) > 0 {
+				hasFailures = true
+				break
+			}
+		}
+	}
+
 	return &ParseBatchResult{
 		Statements:       statements,
 		TotalStatements:  len(statements),
 		ParsedStatements: parsedCount,
-		HasFailures:      parsedCount != len(statements),
+		HasFailures:      hasFailures,
 	}, nil
 }
 

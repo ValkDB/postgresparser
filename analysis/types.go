@@ -246,9 +246,7 @@ type SQLAnalysisBatchResult struct {
 	Statements       []SQLStatementAnalysisResult
 	TotalStatements  int
 	ParsedStatements int
-	// HasFailures is true when at least one statement could not produce a Query.
-	// Note: statements with syntax errors may still produce a Query via ANTLR
-	// error recovery; check SQLStatementAnalysisResult.Warnings for syntax issues.
+	// HasFailures is true when at least one statement has a nil Query or any Warnings.
 	HasFailures bool
 }
 

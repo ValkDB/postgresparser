@@ -157,7 +157,7 @@ func TestAnalyzeSQLAllTable(t *testing.T) {
 			sql:          "SELECT FROM",
 			wantTotal:    1,
 			wantParsed:   1,
-			wantFailed:   false,
+			wantFailed:   true,
 			wantCommands: []SQLCommand{SQLCommandSelect},
 			wantWarnCodes: [][]SQLParseWarningCode{
 				{SQLParseWarningCodeSyntaxError},
@@ -168,7 +168,7 @@ func TestAnalyzeSQLAllTable(t *testing.T) {
 			sql:          "SELECT 1;\nSELECT FROM;\nSELECT 2;",
 			wantTotal:    3,
 			wantParsed:   3,
-			wantFailed:   false,
+			wantFailed:   true,
 			wantCommands: []SQLCommand{SQLCommandSelect, SQLCommandSelect, SQLCommandSelect},
 			wantWarnCodes: [][]SQLParseWarningCode{
 				nil,

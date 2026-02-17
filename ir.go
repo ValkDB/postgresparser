@@ -238,9 +238,7 @@ type ParseBatchResult struct {
 	Statements       []StatementParseResult
 	TotalStatements  int
 	ParsedStatements int
-	// HasFailures is true when at least one statement could not produce a Query.
-	// Note: statements with syntax errors may still produce a Query via ANTLR
-	// error recovery; check StatementParseResult.Warnings for syntax issues.
+	// HasFailures is true when at least one statement has a nil Query or any Warnings.
 	HasFailures bool
 }
 
