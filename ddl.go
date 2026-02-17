@@ -493,12 +493,7 @@ func populateTruncate(result *ParsedQuery, ctx gen.ITruncatestmtContext, tokens 
 
 	if relList := ctx.Relation_expr_list(); relList != nil {
 		for _, rel := range relList.AllRelation_expr() {
-			prc, ok := rel.(antlr.ParserRuleContext)
-			if !ok {
-				continue
-			}
-			nameText := strings.TrimSpace(ctxText(tokens, prc))
-			schema, name := splitQualifiedName(nameText)
+			raw, schema, name := extractRelationExprNameParts(rel, tokens)
 			result.DDLActions = append(result.DDLActions, DDLAction{
 				Type:       DDLTruncate,
 				ObjectName: name,
@@ -509,7 +504,7 @@ func populateTruncate(result *ParsedQuery, ctx gen.ITruncatestmtContext, tokens 
 				Schema: schema,
 				Name:   name,
 				Type:   TableTypeBase,
-				Raw:    nameText,
+				Raw:    raw,
 			})
 		}
 	}
