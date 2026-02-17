@@ -1,6 +1,8 @@
 # ParsedQuery IR Reference
 
-This document defines how to interpret `postgresparser.ParseSQL` output (`ParsedQuery` in `ir.go`).
+This document defines how to interpret parser outputs:
+- `postgresparser.ParseSQL` / `postgresparser.ParseSQLStrict` output (`ParsedQuery` in `ir.go`)
+- `postgresparser.ParseSQLAll` output (`ParseBatchResult` in `ir.go`)
 
 ## Purpose
 
@@ -19,8 +21,18 @@ It is not designed for:
 ## Scope
 
 - `ParseSQL` parses only the first statement in the input string.
+- `ParseSQLAll` parses all statements in the input string and returns `ParseBatchResult`.
+- `ParseSQLStrict` returns an error unless exactly one statement is present.
 - Unrelated sections are expected to be empty for a given command.
 - `Command` is the primary discriminator for which sections to read.
+
+## ParseBatchResult
+
+`ParseBatchResult` fields:
+- `Queries`: Parsed statements in source order.
+- `Warnings`: Non-fatal parser notices (batch-level). Includes `FIRST_STATEMENT_ONLY` when input has multiple statements.
+- `TotalStatements`: Number of statements detected in input.
+- `ParsedStatements`: Number of statements converted to IR.
 
 ## Core Envelope
 

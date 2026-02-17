@@ -17,6 +17,10 @@
 //	fmt.Println(result.Tables)   // [{Schema:"" Name:"users" Alias:"" Type:"base" Raw:"users"}]
 //	fmt.Println(result.Columns)  // [{Expression:"id" Alias:""}, {Expression:"name" Alias:""}]
 //
+// ParseSQL parses only the first statement in a multi-statement input for
+// backward compatibility. Use ParseSQLAll to parse all statements, or
+// ParseSQLStrict to fail unless exactly one statement is present.
+//
 // # Analysis Subpackage
 //
 // The analysis subpackage provides higher-level SQL analysis on top of the

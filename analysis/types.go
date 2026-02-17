@@ -191,6 +191,12 @@ type SQLDDLAction struct {
 	IndexType     string
 }
 
+// SQLParseWarning captures non-fatal parser notices emitted by batch APIs.
+type SQLParseWarning struct {
+	Code    string
+	Message string
+}
+
 // SQLAnalysis is a standalone DTO representing the parsed SQL metadata.
 type SQLAnalysis struct {
 	RawSQL         string
@@ -216,6 +222,14 @@ type SQLAnalysis struct {
 	ColumnUsage    []SQLColumnUsage
 	Correlations   []SQLJoinCorrelation
 	DerivedColumns map[string]string
+}
+
+// SQLAnalysisBatchResult contains all parsed statements plus batch metadata.
+type SQLAnalysisBatchResult struct {
+	Queries          []*SQLAnalysis
+	Warnings         []SQLParseWarning
+	TotalStatements  int
+	ParsedStatements int
 }
 
 // WhereCondition represents a single WHERE clause condition extracted from a query.

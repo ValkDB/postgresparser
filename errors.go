@@ -14,9 +14,28 @@ var (
 	// ErrNoStatements is returned when the input SQL contains no parseable statements.
 	ErrNoStatements = errors.New("no statements found")
 
+	// ErrMultipleStatements is returned by ParseSQLStrict when input contains
+	// more than one statement.
+	ErrMultipleStatements = errors.New("multiple statements found")
+
 	// ErrNilContext is returned when a required parser context is nil.
 	ErrNilContext = errors.New("nil context")
 )
+
+// MultipleStatementsError indicates ParseSQLStrict received a multi-statement input.
+type MultipleStatementsError struct {
+	StatementCount int
+}
+
+// Error formats the strict-mode multi-statement validation failure.
+func (e *MultipleStatementsError) Error() string {
+	return fmt.Sprintf("%s: expected exactly 1 statement, got %d", ErrMultipleStatements, e.StatementCount)
+}
+
+// Unwrap returns the sentinel error for errors.Is compatibility.
+func (e *MultipleStatementsError) Unwrap() error {
+	return ErrMultipleStatements
+}
 
 // SyntaxError describes a single parser syntax error with line/column context.
 type SyntaxError struct {

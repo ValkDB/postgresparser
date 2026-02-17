@@ -23,6 +23,18 @@ const (
 	QueryCommandUnknown QueryCommand = "UNKNOWN"
 )
 
+const (
+	// ParseWarningCodeFirstStatementOnly indicates the input contains multiple
+	// statements and ParseSQL would process only the first for compatibility.
+	ParseWarningCodeFirstStatementOnly = "FIRST_STATEMENT_ONLY"
+)
+
+// ParseWarning captures non-fatal parser notices emitted by batch APIs.
+type ParseWarning struct {
+	Code    string
+	Message string
+}
+
 // TableType distinguishes between base relations, CTEs, derived tables, etc.
 type TableType string
 
@@ -206,6 +218,15 @@ type ColumnUsage struct {
 	Operator   string
 	Side       string
 	Functions  []string
+}
+
+// ParseBatchResult is returned by ParseSQLAll and includes parsed statements plus
+// batch-level metadata.
+type ParseBatchResult struct {
+	Queries          []*ParsedQuery
+	Warnings         []ParseWarning
+	TotalStatements  int
+	ParsedStatements int
 }
 
 // ParsedQuery is the intermediate representation returned by ParseSQL.
