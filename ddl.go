@@ -249,15 +249,10 @@ func populateAlterTable(result *ParsedQuery, ctx gen.IAltertablestmtContext, tok
 	tableName := ""
 	tableSchema := ""
 	if rel := ctx.Relation_expr(); rel != nil {
-		if prc, ok := rel.(antlr.ParserRuleContext); ok {
-			tableRaw = strings.TrimSpace(ctxText(tokens, prc))
-		}
-		schema, name := splitQualifiedName(tableRaw)
-		tableName = name
-		tableSchema = schema
+		tableRaw, tableSchema, tableName = extractRelationExprNameParts(rel, tokens)
 		result.Tables = append(result.Tables, TableRef{
-			Schema: schema,
-			Name:   name,
+			Schema: tableSchema,
+			Name:   tableName,
 			Type:   TableTypeBase,
 			Raw:    tableRaw,
 		})
@@ -377,6 +372,26 @@ func extractAlterCmdColumnName(cmd gen.IAlter_table_cmdContext, tokens antlr.Tok
 	return ""
 }
 
+// extractRelationExprNameParts extracts relation expression text and normalized schema/name.
+// It prefers the structured Qualified_name() AST node so modifiers like ONLY do not leak into schema.
+func extractRelationExprNameParts(rel gen.IRelation_exprContext, tokens antlr.TokenStream) (raw, schema, name string) {
+	if rel == nil {
+		return "", "", ""
+	}
+	if prc, ok := rel.(antlr.ParserRuleContext); ok {
+		raw = strings.TrimSpace(ctxText(tokens, prc))
+	}
+
+	if qualified := rel.Qualified_name(); qualified != nil {
+		if prc, ok := qualified.(antlr.ParserRuleContext); ok {
+			schema, name = splitQualifiedName(strings.TrimSpace(ctxText(tokens, prc)))
+			return raw, schema, name
+		}
+	}
+	schema, name = splitQualifiedName(raw)
+	return raw, schema, name
+}
+
 // populateCreateIndex handles CREATE [UNIQUE] INDEX [CONCURRENTLY] ... ON table.
 func populateCreateIndex(result *ParsedQuery, ctx gen.IIndexstmtContext, tokens antlr.TokenStream) error {
 	if ctx == nil {
@@ -390,19 +405,16 @@ func populateCreateIndex(result *ParsedQuery, ctx gen.IIndexstmtContext, tokens 
 		}
 	}
 
+	tableRaw := ""
 	tableName := ""
 	tableSchema := ""
 	if rel := ctx.Relation_expr(); rel != nil {
-		if prc, ok := rel.(antlr.ParserRuleContext); ok {
-			tableName = strings.TrimSpace(ctxText(tokens, prc))
-		}
-		schema, name := splitQualifiedName(tableName)
-		tableSchema = schema
+		tableRaw, tableSchema, tableName = extractRelationExprNameParts(rel, tokens)
 		result.Tables = append(result.Tables, TableRef{
-			Schema: schema,
-			Name:   name,
+			Schema: tableSchema,
+			Name:   tableName,
 			Type:   TableTypeBase,
-			Raw:    tableName,
+			Raw:    tableRaw,
 		})
 	}
 
