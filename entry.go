@@ -12,9 +12,10 @@ import (
 
 // ParseSQL parses only the first SQL statement in the input string.
 // Additional statements are ignored for backward compatibility.
+// RawSQL in the returned ParsedQuery preserves the full preprocessed input.
 // Use ParseSQLAll to parse all statements, or ParseSQLStrict to enforce exactly one.
 func ParseSQL(sql string) (*ParsedQuery, error) {
-	state, err := prepareParseState(sql)
+	state, err := prepareParseState(sql, false)
 	if err != nil {
 		return nil, err
 	}
@@ -22,67 +23,85 @@ func ParseSQL(sql string) (*ParsedQuery, error) {
 }
 
 // ParseSQLAll parses all SQL statements in the input string and returns a
-// batch result containing each statement IR plus statement-level counters.
+// batch result containing one per-statement parse result in source order.
+// This API is best-effort and non-fail-fast for per-statement IR extraction.
+// Statement-level failures are represented by nil StatementParseResult.Query and
+// do not abort the batch.
 func ParseSQLAll(sql string) (*ParseBatchResult, error) {
-	state, err := prepareParseState(sql)
+	state, err := prepareParseState(sql, true)
 	if err != nil {
 		return nil, err
 	}
 
-	queries := make([]*ParsedQuery, 0, len(state.stmts))
-	for _, stmt := range state.stmts {
+	statements := make([]StatementParseResult, len(state.stmts))
+	parsedCount := 0
+	for i, stmt := range state.stmts {
 		stmtSQL := statementText(state.stream, stmt)
+		statements[i] = StatementParseResult{
+			Index:  i + 1,
+			RawSQL: stmtSQL,
+		}
 		if stmtSQL == "" {
-			stmtSQL = state.cleanSQL
+			continue
 		}
 		query, parseErr := parseStatementToIR(stmt, state.stream, stmtSQL)
 		if parseErr != nil {
-			return nil, parseErr
+			continue
 		}
-		queries = append(queries, query)
+		statements[i].Query = query
+		parsedCount++
 	}
 
-	var warnings []ParseWarning
-	if len(state.stmts) > 1 {
-		warnings = append(warnings, ParseWarning{
-			Code: ParseWarningCodeFirstStatementOnly,
+	for _, syntaxErr := range state.syntaxErrors {
+		idx := statementIndexForSyntaxError(state.stmts, syntaxErr)
+		if idx < 0 || idx >= len(statements) {
+			continue
+		}
+		statements[idx].Warnings = append(statements[idx].Warnings, ParseWarning{
+			Code: ParseWarningCodeSyntaxError,
 			Message: fmt.Sprintf(
-				"ParseSQL parses only the first statement; %d additional statement(s) detected",
-				len(state.stmts)-1,
+				"line %d:%d %s",
+				syntaxErr.Line,
+				syntaxErr.Column,
+				syntaxErr.Message,
 			),
 		})
 	}
 
 	return &ParseBatchResult{
-		Queries:          queries,
-		Warnings:         warnings,
-		TotalStatements:  len(state.stmts),
-		ParsedStatements: len(queries),
+		Statements:       statements,
+		TotalStatements:  len(statements),
+		ParsedStatements: parsedCount,
+		HasFailures:      parsedCount != len(statements),
 	}, nil
 }
 
 // ParseSQLStrict parses input only when it contains exactly one SQL statement.
 // It returns ErrMultipleStatements when more than one statement is present.
 func ParseSQLStrict(sql string) (*ParsedQuery, error) {
-	state, err := prepareParseState(sql)
+	state, err := prepareParseState(sql, false)
 	if err != nil {
 		return nil, err
 	}
-	if len(state.stmts) != 1 {
+	if len(state.stmts) > 1 {
 		return nil, &MultipleStatementsError{StatementCount: len(state.stmts)}
 	}
 	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL)
 }
 
 type parseState struct {
-	cleanSQL string
-	stream   antlr.TokenStream
-	stmts    []gen.IStmtContext
+	cleanSQL     string
+	stream       antlr.TokenStream
+	stmts        []gen.IStmtContext
+	syntaxErrors []SyntaxError
 }
 
-// prepareParseState preprocesses SQL, runs the ANTLR parser once, and returns
-// the parsed statement list plus shared token stream used for IR extraction.
-func prepareParseState(sql string) (*parseState, error) {
+// prepareParseState preprocesses SQL, runs ANTLR parsing once, and returns the
+// parsed statement list plus shared token stream used for IR extraction.
+// When tolerateSyntaxErrors is false, any syntax error fails immediately.
+// When true, syntax errors are collected into state.syntaxErrors as long as
+// statement contexts can still be recovered.
+func prepareParseState(sql string, tolerateSyntaxErrors bool) (*parseState, error) {
 	cleanSQL := preprocessSQLInput(sql)
 	input := antlr.NewInputStream(cleanSQL)
 	lexer := gen.NewPostgreSQLLexer(input)
@@ -95,27 +114,39 @@ func prepareParseState(sql string) (*parseState, error) {
 	parser.AddErrorListener(errListener)
 
 	root := parser.Root()
-	if len(errListener.errs) > 0 {
+	if !tolerateSyntaxErrors && len(errListener.errs) > 0 {
 		return nil, &ParseErrors{SQL: cleanSQL, Errors: errListener.errs}
 	}
 	if root == nil || root.Stmtblock() == nil {
+		if len(errListener.errs) > 0 {
+			return nil, &ParseErrors{SQL: cleanSQL, Errors: errListener.errs}
+		}
 		return nil, ErrNoStatements
 	}
-
 	stmtMulti := root.Stmtblock().Stmtmulti()
 	if stmtMulti == nil {
+		if len(errListener.errs) > 0 {
+			return nil, &ParseErrors{SQL: cleanSQL, Errors: errListener.errs}
+		}
 		return nil, ErrNoStatements
 	}
 	stmts := stmtMulti.AllStmt()
 	if len(stmts) == 0 {
+		if len(errListener.errs) > 0 {
+			return nil, &ParseErrors{SQL: cleanSQL, Errors: errListener.errs}
+		}
 		return nil, ErrNoStatements
 	}
 
-	return &parseState{
+	state := &parseState{
 		cleanSQL: cleanSQL,
 		stream:   stream,
 		stmts:    stmts,
-	}, nil
+	}
+	if tolerateSyntaxErrors {
+		state.syntaxErrors = errListener.errs
+	}
+	return state, nil
 }
 
 // parseStatementToIR maps a single parsed statement node to ParsedQuery IR.
@@ -192,4 +223,77 @@ func statementText(stream antlr.TokenStream, stmt gen.IStmtContext) string {
 		return ""
 	}
 	return strings.TrimSpace(ctxText(stream, ruleCtx))
+}
+
+// statementIndexForSyntaxError maps an ANTLR syntax error to the nearest parsed
+// statement index using token bounds when available, then line bounds.
+func statementIndexForSyntaxError(stmts []gen.IStmtContext, syntaxErr SyntaxError) int {
+	if len(stmts) == 0 {
+		return -1
+	}
+
+	if syntaxErr.TokenIndex >= 0 {
+		for i, stmt := range stmts {
+			startToken, stopToken := statementTokenBounds(stmt)
+			if startToken < 0 || stopToken < startToken {
+				continue
+			}
+			if syntaxErr.TokenIndex >= startToken && syntaxErr.TokenIndex <= stopToken {
+				return i
+			}
+		}
+	}
+
+	line := syntaxErr.Line
+	for i, stmt := range stmts {
+		startLine, stopLine := statementLineBounds(stmt)
+		if startLine == 0 && stopLine == 0 {
+			continue
+		}
+		if line >= startLine && line <= stopLine {
+			return i
+		}
+	}
+
+	firstStart, _ := statementLineBounds(stmts[0])
+	if firstStart > 0 && line < firstStart {
+		return 0
+	}
+	return -1
+}
+
+func statementTokenBounds(stmt gen.IStmtContext) (int, int) {
+	if stmt == nil {
+		return -1, -1
+	}
+	start := stmt.GetStart()
+	stop := stmt.GetStop()
+	if start == nil || stop == nil {
+		return -1, -1
+	}
+	return start.GetTokenIndex(), stop.GetTokenIndex()
+}
+
+func statementLineBounds(stmt gen.IStmtContext) (int, int) {
+	if stmt == nil {
+		return 0, 0
+	}
+	start := stmt.GetStart()
+	stop := stmt.GetStop()
+	if start == nil && stop == nil {
+		return 0, 0
+	}
+
+	startLine := 0
+	stopLine := 0
+	if start != nil {
+		startLine = start.GetLine()
+	}
+	if stop != nil {
+		stopLine = stop.GetLine()
+	}
+	if startLine > 0 && stopLine < startLine {
+		stopLine = startLine
+	}
+	return startLine, stopLine
 }

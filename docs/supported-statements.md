@@ -5,7 +5,8 @@ This document describes which PostgreSQL statement types are supported by the pa
 ## Statement Count Handling
 
 - `ParseSQL` parses the first statement only (backward-compatible behavior).
-- `ParseSQLAll` parses all statements and returns a `ParseBatchResult` (with `FIRST_STATEMENT_ONLY` warning when multiple statements are present).
+- `ParseSQLAll` parses all statements and returns a `ParseBatchResult` with one `Statements[i]` result per input statement in source order.
+  - A statement failed conversion when `Statements[i].Query == nil`.
 - `ParseSQLStrict` requires exactly one statement and returns `ErrMultipleStatements` otherwise.
 
 ## Fully Parsed Statements

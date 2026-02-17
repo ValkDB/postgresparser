@@ -42,6 +42,8 @@ type SyntaxError struct {
 	Line    int
 	Column  int
 	Message string
+	// TokenIndex is the offending token index when available; -1 when unknown.
+	TokenIndex int
 }
 
 // ParseErrors aggregates syntax errors encountered while parsing a SQL string.
@@ -75,9 +77,14 @@ type parseErrorListener struct {
 // SyntaxError records each ANTLR syntax error with position data for later consumption.
 func (l *parseErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSymbol interface{},
 	line, column int, msg string, e antlr.RecognitionException) {
+	tokenIndex := -1
+	if tok, ok := offendingSymbol.(antlr.Token); ok && tok != nil {
+		tokenIndex = tok.GetTokenIndex()
+	}
 	l.errs = append(l.errs, SyntaxError{
-		Line:    line,
-		Column:  column,
-		Message: msg,
+		Line:       line,
+		Column:     column,
+		Message:    msg,
+		TokenIndex: tokenIndex,
 	})
 }

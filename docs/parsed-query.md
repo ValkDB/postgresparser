@@ -29,10 +29,14 @@ It is not designed for:
 ## ParseBatchResult
 
 `ParseBatchResult` fields:
-- `Queries`: Parsed statements in source order.
-- `Warnings`: Non-fatal parser notices (batch-level). Includes `FIRST_STATEMENT_ONLY` when input has multiple statements.
+- `Statements`: One `StatementParseResult` per input statement in source order.
+  - `Index`: 1-based input statement index.
+  - `RawSQL`: statement-scoped SQL text.
+  - `Query`: parsed IR when statement conversion succeeds (`nil` on failure).
+  - `Warnings`: statement-scoped warnings (`SYNTAX_ERROR`).
 - `TotalStatements`: Number of statements detected in input.
-- `ParsedStatements`: Number of statements converted to IR.
+- `ParsedStatements`: Number of statements with non-`nil` `Query`.
+- `HasFailures`: `true` when one or more statements have `Query == nil`.
 
 ## Core Envelope
 

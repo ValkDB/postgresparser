@@ -44,18 +44,34 @@ func convertBatchResult(batch *postgresparser.ParseBatchResult) *SQLAnalysisBatc
 		return nil
 	}
 	res := &SQLAnalysisBatchResult{
-		Warnings:         convertWarnings(batch.Warnings),
+		Statements:       convertStatementResults(batch.Statements),
 		TotalStatements:  batch.TotalStatements,
 		ParsedStatements: batch.ParsedStatements,
-	}
-	if len(batch.Queries) == 0 {
-		return res
-	}
-	res.Queries = make([]*SQLAnalysis, 0, len(batch.Queries))
-	for _, q := range batch.Queries {
-		res.Queries = append(res.Queries, convertParsedQuery(q))
+		HasFailures:      batch.HasFailures,
 	}
 	return res
+}
+
+// convertStatementResults maps parser statement results into analysis statement
+// results.
+func convertStatementResults(statements []postgresparser.StatementParseResult) []SQLStatementAnalysisResult {
+	if len(statements) == 0 {
+		return nil
+	}
+	out := make([]SQLStatementAnalysisResult, 0, len(statements))
+	for _, stmt := range statements {
+		var query *SQLAnalysis
+		if stmt.Query != nil {
+			query = convertParsedQuery(stmt.Query)
+		}
+		out = append(out, SQLStatementAnalysisResult{
+			Index:    stmt.Index,
+			RawSQL:   stmt.RawSQL,
+			Query:    query,
+			Warnings: convertWarnings(stmt.Warnings),
+		})
+	}
+	return out
 }
 
 // convertWarnings maps parser parse warnings into analysis parse warnings.
@@ -66,7 +82,7 @@ func convertWarnings(warnings []postgresparser.ParseWarning) []SQLParseWarning {
 	out := make([]SQLParseWarning, 0, len(warnings))
 	for _, w := range warnings {
 		out = append(out, SQLParseWarning{
-			Code:    w.Code,
+			Code:    SQLParseWarningCode(w.Code),
 			Message: w.Message,
 		})
 	}

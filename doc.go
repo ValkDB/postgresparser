@@ -18,8 +18,9 @@
 //	fmt.Println(result.Columns)  // [{Expression:"id" Alias:""}, {Expression:"name" Alias:""}]
 //
 // ParseSQL parses only the first statement in a multi-statement input for
-// backward compatibility. Use ParseSQLAll to parse all statements, or
-// ParseSQLStrict to fail unless exactly one statement is present.
+// backward compatibility. Use ParseSQLAll to parse all statements with explicit
+// per-statement status/warnings, or ParseSQLStrict to fail unless exactly one
+// statement is present.
 //
 // # Analysis Subpackage
 //

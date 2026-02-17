@@ -47,8 +47,8 @@ if err != nil {
 
 fmt.Println(batch.TotalStatements)  // 2
 fmt.Println(batch.ParsedStatements) // 2
-fmt.Println(batch.Queries[0].DDLActions[0].ObjectName) // "api_key"
-fmt.Println(batch.Queries[1].DDLActions[0].ObjectName) // "sometable"
+fmt.Println(batch.Statements[0].Query.DDLActions[0].ObjectName) // "api_key"
+fmt.Println(batch.Statements[1].Query.DDLActions[0].ObjectName) // "sometable"
 ```
 
 **Performance:** With [SLL prediction mode](docs/performance.md), most queries parse in **70–350 µs**.
@@ -91,8 +91,10 @@ IR field reference: [ParsedQuery IR Reference](docs/parsed-query.md)
 Use the API variant that matches your input contract:
 
 - `ParseSQL(sql)` parses the first statement only (backward-compatible behavior).
-- `ParseSQLAll(sql)` parses all statements and returns `ParseBatchResult` (`Queries`, `TotalStatements`, `ParsedStatements`, `Warnings`).
-  - `Warnings` includes `FIRST_STATEMENT_ONLY` when input contains multiple statements, signaling the compatibility behavior of `ParseSQL`.
+- `ParseSQLAll(sql)` parses all statements and returns `ParseBatchResult` with one `Statements[i]` result per input statement (`Index`, `RawSQL`, `Query`, `Warnings`).
+  - A statement failed conversion when `Statements[i].Query == nil`.
+  - Correlation is deterministic: `Statements[i].Index` maps to source statement order.
+  - `HasFailures` is `true` when one or more statements failed IR conversion.
 - `ParseSQLStrict(sql)` requires exactly one statement and returns `ErrMultipleStatements` when input contains more than one.
 
 ## Supported SQL Statements
@@ -185,6 +187,7 @@ See the [`examples/`](examples/) directory:
 - [`basic/`](examples/basic/) — Parse SQL and inspect the IR
 - [`analysis/`](examples/analysis/) — Column usage, WHERE conditions, JOIN relationships
 - [`ddl/`](examples/ddl/) — Parse CREATE TABLE / ALTER TABLE plus DELETE command metadata
+- [`multi_statement/`](examples/multi_statement/) — Correlate `ParseSQLAll` output back to each input statement and detect failures (`Query == nil`)
 - [`sll_mode/`](examples/sll_mode/) — SLL prediction mode for maximum throughput
 
 ## Grammar
