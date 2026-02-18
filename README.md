@@ -31,6 +31,25 @@ fmt.Println(result.GroupBy)       // ["u.name"]
 fmt.Println(result.ColumnUsage)   // each column with its role: filter, join, projection, group, order
 ```
 
+For multi-statement behavior and strict mode, see [Statement Count Handling](#statement-count-handling).
+
+```go
+batch, err := postgresparser.ParseSQLAll(`
+CREATE TABLE public.api_key (
+    id integer NOT NULL
+);
+CREATE TABLE public.sometable (
+    id integer NOT NULL
+);`)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(len(batch.Statements))                              // 2
+fmt.Println(batch.Statements[0].Query.DDLActions[0].ObjectName) // "api_key"
+fmt.Println(batch.Statements[1].Query.DDLActions[0].ObjectName) // "sometable"
+```
+
 **Performance:** With [SLL prediction mode](docs/performance.md), most queries parse in **70–350 µs**.
 
 ## Installation
@@ -66,6 +85,17 @@ Handles the SQL you actually write in production:
 
 IR field reference: [ParsedQuery IR Reference](docs/parsed-query.md)
 
+## Statement Count Handling
+
+Use the API variant that matches your input contract:
+
+- `ParseSQL(sql)` parses the first statement only (backward-compatible behavior).
+- `ParseSQLAll(sql)` parses all statements and returns `ParseBatchResult` with one `Statements[i]` result per input statement (`Index`, `RawSQL`, `Query`, `Warnings`).
+  - A statement failed conversion when `Statements[i].Query == nil`.
+  - Correlation is deterministic: `Statements[i].Index` maps to source statement order.
+  - `HasFailures` is `true` when any statement has a nil `Query` or any `Warnings`.
+- `ParseSQLStrict(sql)` requires exactly one statement and returns `ErrMultipleStatements` when input contains more than one.
+
 ## Supported SQL Statements
 
 See [docs/supported-statements.md](./docs/supported-statements.md) for full details on parsed commands, graceful handling (e.g. SET/SHOW/RESET), and what's currently UNKNOWN or unsupported.
@@ -80,6 +110,10 @@ See [docs/supported-statements.md](./docs/supported-statements.md) for full deta
 ## Analysis
 
 The `analysis` subpackage provides higher-level intelligence on top of the IR:
+
+- `analysis.AnalyzeSQL(sql)` analyzes the first statement only (matches `ParseSQL`).
+- `analysis.AnalyzeSQLAll(sql)` analyzes all statements and returns `SQLAnalysisBatchResult`.
+- `analysis.AnalyzeSQLStrict(sql)` requires exactly one statement (matches `ParseSQLStrict`).
 
 ### Column usage analysis
 
@@ -152,6 +186,7 @@ See the [`examples/`](examples/) directory:
 - [`basic/`](examples/basic/) — Parse SQL and inspect the IR
 - [`analysis/`](examples/analysis/) — Column usage, WHERE conditions, JOIN relationships
 - [`ddl/`](examples/ddl/) — Parse CREATE TABLE / ALTER TABLE plus DELETE command metadata
+- [`multi_statement/`](examples/multi_statement/) — Correlate `ParseSQLAll` output back to each input statement and detect failures (`Query == nil`)
 - [`sll_mode/`](examples/sll_mode/) — SLL prediction mode for maximum throughput
 
 ## Grammar
@@ -166,7 +201,7 @@ antlr4 -Dlanguage=Go -visitor -listener -package gen -o gen grammar/PostgreSQLLe
 
 This is an ANTLR4-based grammar, not PostgreSQL's internal server parser. Some edge-case syntax may differ across PostgreSQL versions. If you find a query that parses in PostgreSQL but fails here, please [open an issue](https://github.com/valkdb/postgresparser/issues) with a minimal repro.
 
-`ParseSQL` processes the first SQL statement. Multi-statement strings (separated by `;`) will have subsequent statements silently ignored.
+`ParseSQL` processes the first SQL statement for backward compatibility. For multi-statement input, use `ParseSQLAll`; to enforce exactly one statement, use `ParseSQLStrict`.
 
 ## License
 

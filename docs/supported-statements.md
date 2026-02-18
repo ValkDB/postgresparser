@@ -2,6 +2,13 @@
 
 This document describes which PostgreSQL statement types are supported by the parser, what level of IR extraction they receive, and how unsupported or partially supported statements are handled.
 
+## Statement Count Handling
+
+- `ParseSQL` parses the first statement only (backward-compatible behavior).
+- `ParseSQLAll` parses all statements and returns a `ParseBatchResult` with one `Statements[i]` result per input statement in source order.
+  - A statement failed conversion when `Statements[i].Query == nil`.
+- `ParseSQLStrict` requires exactly one statement and returns `ErrMultipleStatements` otherwise.
+
 ## Fully Parsed Statements
 
 These statements are walked via ANTLR visitors and produce rich IR metadata in `ParsedQuery`.

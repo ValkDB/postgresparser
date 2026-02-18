@@ -191,6 +191,21 @@ type SQLDDLAction struct {
 	IndexType     string
 }
 
+// SQLParseWarningCode identifies non-fatal parser notices in analysis batch results.
+type SQLParseWarningCode string
+
+const (
+	// SQLParseWarningCodeSyntaxError indicates ANTLR reported a syntax error
+	// while parsing a statement in batch mode.
+	SQLParseWarningCodeSyntaxError SQLParseWarningCode = "SYNTAX_ERROR"
+)
+
+// SQLParseWarning captures non-fatal parser notices emitted by batch APIs.
+type SQLParseWarning struct {
+	Code    SQLParseWarningCode
+	Message string
+}
+
 // SQLAnalysis is a standalone DTO representing the parsed SQL metadata.
 type SQLAnalysis struct {
 	RawSQL         string
@@ -216,6 +231,23 @@ type SQLAnalysis struct {
 	ColumnUsage    []SQLColumnUsage
 	Correlations   []SQLJoinCorrelation
 	DerivedColumns map[string]string
+}
+
+// SQLStatementAnalysisResult contains one statement's analysis result and
+// warnings in the same source order as the input SQL.
+type SQLStatementAnalysisResult struct {
+	Index    int
+	RawSQL   string
+	Query    *SQLAnalysis
+	Warnings []SQLParseWarning
+}
+
+// SQLAnalysisBatchResult contains one analysis result per input statement plus
+// a failure flag.
+type SQLAnalysisBatchResult struct {
+	Statements []SQLStatementAnalysisResult
+	// HasFailures is true when at least one statement has a nil Query or any Warnings.
+	HasFailures bool
 }
 
 // WhereCondition represents a single WHERE clause condition extracted from a query.

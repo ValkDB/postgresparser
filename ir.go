@@ -23,6 +23,21 @@ const (
 	QueryCommandUnknown QueryCommand = "UNKNOWN"
 )
 
+// ParseWarningCode identifies non-fatal parser notices in batch results.
+type ParseWarningCode string
+
+const (
+	// ParseWarningCodeSyntaxError indicates ANTLR reported a syntax error while
+	// parsing the input in ParseSQLAll mode.
+	ParseWarningCodeSyntaxError ParseWarningCode = "SYNTAX_ERROR"
+)
+
+// ParseWarning captures non-fatal parser notices emitted by batch APIs.
+type ParseWarning struct {
+	Code    ParseWarningCode
+	Message string
+}
+
 // TableType distinguishes between base relations, CTEs, derived tables, etc.
 type TableType string
 
@@ -206,6 +221,23 @@ type ColumnUsage struct {
 	Operator   string
 	Side       string
 	Functions  []string
+}
+
+// StatementParseResult contains the parse outcome for one input statement at the
+// same index/order as it appeared in SQL text.
+type StatementParseResult struct {
+	Index    int
+	RawSQL   string
+	Query    *ParsedQuery
+	Warnings []ParseWarning
+}
+
+// ParseBatchResult is returned by ParseSQLAll and includes one parse result per
+// input statement plus a failure flag.
+type ParseBatchResult struct {
+	Statements []StatementParseResult
+	// HasFailures is true when at least one statement has a nil Query or any Warnings.
+	HasFailures bool
 }
 
 // ParsedQuery is the intermediate representation returned by ParseSQL.

@@ -9,13 +9,82 @@ import (
 	"github.com/valkdb/postgresparser"
 )
 
-// AnalyzeSQL parses the SQL text and returns a standalone analysis result.
+// AnalyzeSQL parses and analyzes only the first SQL statement in the input.
+// Use AnalyzeSQLAll for full multi-statement analysis, or AnalyzeSQLStrict to
+// enforce exactly one statement.
 func AnalyzeSQL(sql string) (*SQLAnalysis, error) {
 	pq, err := postgresparser.ParseSQL(sql)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse SQL: %w", err)
 	}
 	return convertParsedQuery(pq), nil
+}
+
+// AnalyzeSQLAll parses all SQL statements and returns a batch analysis result.
+func AnalyzeSQLAll(sql string) (*SQLAnalysisBatchResult, error) {
+	batch, err := postgresparser.ParseSQLAll(sql)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse SQL: %w", err)
+	}
+	return convertBatchResult(batch), nil
+}
+
+// AnalyzeSQLStrict parses SQL only when it contains exactly one statement.
+func AnalyzeSQLStrict(sql string) (*SQLAnalysis, error) {
+	pq, err := postgresparser.ParseSQLStrict(sql)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse SQL: %w", err)
+	}
+	return convertParsedQuery(pq), nil
+}
+
+// convertBatchResult maps parser ParseBatchResult into analysis batch DTO.
+func convertBatchResult(batch *postgresparser.ParseBatchResult) *SQLAnalysisBatchResult {
+	if batch == nil {
+		return nil
+	}
+	res := &SQLAnalysisBatchResult{
+		Statements:  convertStatementResults(batch.Statements),
+		HasFailures: batch.HasFailures,
+	}
+	return res
+}
+
+// convertStatementResults maps parser statement results into analysis statement
+// results.
+func convertStatementResults(statements []postgresparser.StatementParseResult) []SQLStatementAnalysisResult {
+	if len(statements) == 0 {
+		return nil
+	}
+	out := make([]SQLStatementAnalysisResult, 0, len(statements))
+	for _, stmt := range statements {
+		var query *SQLAnalysis
+		if stmt.Query != nil {
+			query = convertParsedQuery(stmt.Query)
+		}
+		out = append(out, SQLStatementAnalysisResult{
+			Index:    stmt.Index,
+			RawSQL:   stmt.RawSQL,
+			Query:    query,
+			Warnings: convertWarnings(stmt.Warnings),
+		})
+	}
+	return out
+}
+
+// convertWarnings maps parser parse warnings into analysis parse warnings.
+func convertWarnings(warnings []postgresparser.ParseWarning) []SQLParseWarning {
+	if len(warnings) == 0 {
+		return nil
+	}
+	out := make([]SQLParseWarning, 0, len(warnings))
+	for _, w := range warnings {
+		out = append(out, SQLParseWarning{
+			Code:    SQLParseWarningCode(w.Code),
+			Message: w.Message,
+		})
+	}
+	return out
 }
 
 // convertParsedQuery maps a parser ParsedQuery into the public SQLAnalysis DTO.

@@ -286,6 +286,22 @@ func TestIR_DDL_CreateIndex_QualifiedIndexNameNormalization(t *testing.T) {
 	assert.Equal(t, "users", ir.Tables[0].Name, "table name mismatch")
 }
 
+func TestIR_DDL_CreateIndex_OnlyRelationRawPreserved(t *testing.T) {
+	ir := parseAssertNoError(t, "CREATE INDEX idx_users_email ON ONLY public.users (email)")
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLCreateIndex, act.Type, "expected CREATE_INDEX")
+	assert.Equal(t, "idx_users_email", act.ObjectName, "object name mismatch")
+	assert.Equal(t, "public", act.Schema, "index schema should inherit parsed table schema")
+
+	require.Len(t, ir.Tables, 1, "tables count mismatch")
+	assert.Equal(t, "public", ir.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "users", ir.Tables[0].Name, "table name mismatch")
+	assert.Equal(t, "ONLY public.users", ir.Tables[0].Raw, "table raw mismatch")
+}
+
 func TestIR_DDL_CreateTable(t *testing.T) {
 	sql := `CREATE TABLE public.users (
     id integer NOT NULL,
@@ -569,6 +585,21 @@ func TestIR_DDL_AlterTableOnlySchemaQualifiedTableRef(t *testing.T) {
 	assert.Empty(t, ir.DDLActions, "expected no DDL actions for ADD CONSTRAINT")
 }
 
+func TestIR_DDL_AlterTableOnlyUnqualifiedTableRef(t *testing.T) {
+	sql := `ALTER TABLE ONLY schema_migrations
+    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.Tables, 1, "tables count mismatch")
+	assert.Equal(t, "", ir.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "schema_migrations", ir.Tables[0].Name, "table name mismatch")
+	assert.Equal(t, "ONLY schema_migrations", ir.Tables[0].Raw, "table raw mismatch")
+
+	// ADD CONSTRAINT is currently skipped in DDL action extraction.
+	assert.Empty(t, ir.DDLActions, "expected no DDL actions for ADD CONSTRAINT")
+}
+
 func TestIR_DDL_AlterTableMultiAction(t *testing.T) {
 	ir := parseAssertNoError(t, "ALTER TABLE users ADD COLUMN status text, DROP COLUMN legacy")
 	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
@@ -591,6 +622,9 @@ func TestIR_DDL_Truncate(t *testing.T) {
 		wantActions int
 		wantFlags   []string
 		wantTables  int
+		wantSchema  string
+		wantObject  string
+		wantRaw     string
 	}{
 		{
 			name:        "simple",
@@ -622,6 +656,18 @@ func TestIR_DDL_Truncate(t *testing.T) {
 			sql:         "TRUNCATE public.users",
 			wantActions: 1,
 			wantTables:  1,
+			wantSchema:  "public",
+			wantObject:  "users",
+			wantRaw:     "public.users",
+		},
+		{
+			name:        "only schema-qualified",
+			sql:         "TRUNCATE ONLY public.users",
+			wantActions: 1,
+			wantTables:  1,
+			wantSchema:  "public",
+			wantObject:  "users",
+			wantRaw:     "ONLY public.users",
 		},
 	}
 
@@ -635,11 +681,16 @@ func TestIR_DDL_Truncate(t *testing.T) {
 				assert.Equal(t, DDLTruncate, act.Type, "expected TRUNCATE type")
 			}
 			assert.Subset(t, ir.DDLActions[0].Flags, tc.wantFlags, "flags mismatch")
-			if tc.name == "schema-qualified" {
-				assert.Equal(t, "public", ir.DDLActions[0].Schema, "schema mismatch")
-				assert.Equal(t, "users", ir.DDLActions[0].ObjectName, "object name mismatch")
+			if tc.wantSchema != "" {
+				assert.Equal(t, tc.wantSchema, ir.DDLActions[0].Schema, "schema mismatch")
+			}
+			if tc.wantObject != "" {
+				assert.Equal(t, tc.wantObject, ir.DDLActions[0].ObjectName, "object name mismatch")
 			}
 			assert.Len(t, ir.Tables, tc.wantTables, "tables count mismatch")
+			if tc.wantRaw != "" {
+				assert.Equal(t, tc.wantRaw, ir.Tables[0].Raw, "table raw mismatch")
+			}
 		})
 	}
 }

@@ -183,6 +183,7 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 		wantFlags  []string
 		wantIdx    string
 		wantTable  string
+		wantRaw    string
 	}{
 		{
 			name:       "simple",
@@ -282,6 +283,15 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 			wantFlags:  []string{"UNIQUE"},
 			wantTable:  `"users"`,
 		},
+		{
+			name:       "only relation preserves raw",
+			sql:        "CREATE INDEX idx_users_email ON ONLY public.users (email)",
+			wantObject: "idx_users_email",
+			wantSchema: "public",
+			wantCols:   1,
+			wantTable:  "users",
+			wantRaw:    "ONLY public.users",
+		},
 	}
 
 	for _, tc := range tests {
@@ -318,6 +328,11 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 			if tc.wantTable != "" {
 				if len(res.Tables) != 1 || res.Tables[0].Name != tc.wantTable {
 					t.Fatalf("expected table %q, got %+v", tc.wantTable, res.Tables)
+				}
+			}
+			if tc.wantRaw != "" {
+				if len(res.Tables) != 1 || res.Tables[0].Raw != tc.wantRaw {
+					t.Fatalf("expected table raw %q, got %+v", tc.wantRaw, res.Tables)
 				}
 			}
 		})
@@ -768,6 +783,32 @@ func TestAnalyzeSQL_DDL_AlterTableOnlySchemaQualifiedTableRef(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSQL_DDL_AlterTableOnlyUnqualifiedTableRef(t *testing.T) {
+	sql := `ALTER TABLE ONLY schema_migrations
+    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);`
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
+	}
+	if res.Tables[0].Schema != "" || res.Tables[0].Name != "schema_migrations" {
+		t.Fatalf("expected table schema_migrations, got %+v", res.Tables[0])
+	}
+	if res.Tables[0].Raw != "ONLY schema_migrations" {
+		t.Fatalf("expected raw table text with ONLY, got %q", res.Tables[0].Raw)
+	}
+
+	// ADD CONSTRAINT is currently skipped in DDL action extraction.
+	if len(res.DDLActions) != 0 {
+		t.Fatalf("expected no DDL actions for ADD CONSTRAINT, got %+v", res.DDLActions)
+	}
+}
+
 // TestAnalyzeSQL_DDL_AlterTableMultiAction checks ALTER TABLE with combined ADD and DROP actions.
 func TestAnalyzeSQL_DDL_AlterTableMultiAction(t *testing.T) {
 	res, err := AnalyzeSQL("ALTER TABLE users ADD COLUMN status text, DROP COLUMN legacy")
@@ -807,6 +848,7 @@ func TestAnalyzeSQL_DDL_Truncate(t *testing.T) {
 		wantSchema string
 		wantFlags  []string
 		wantTables int
+		wantRaw    string
 	}{
 		{
 			name:       "simple",
@@ -854,6 +896,16 @@ func TestAnalyzeSQL_DDL_Truncate(t *testing.T) {
 			wantObject: "users",
 			wantSchema: "public",
 			wantTables: 1,
+			wantRaw:    "public.users",
+		},
+		{
+			name:       "only schema-qualified",
+			sql:        "TRUNCATE ONLY public.users",
+			wantCount:  1,
+			wantObject: "users",
+			wantSchema: "public",
+			wantTables: 1,
+			wantRaw:    "ONLY public.users",
 		},
 	}
 
@@ -889,6 +941,11 @@ func TestAnalyzeSQL_DDL_Truncate(t *testing.T) {
 			}
 			if len(res.Tables) != tc.wantTables {
 				t.Fatalf("expected %d tables, got %d", tc.wantTables, len(res.Tables))
+			}
+			if tc.wantRaw != "" {
+				if len(res.Tables) == 0 || res.Tables[0].Raw != tc.wantRaw {
+					t.Fatalf("expected table raw %q, got %+v", tc.wantRaw, res.Tables)
+				}
 			}
 		})
 	}
