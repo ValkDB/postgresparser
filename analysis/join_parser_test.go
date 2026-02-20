@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valkdb/postgresparser"
 )
 
 // TestDeduplicateRelationships validates removal of duplicate join relationships.
@@ -56,4 +57,46 @@ func TestExtractJoinRelationshipsWithSchema_ParseError(t *testing.T) {
 	relationships, err := ExtractJoinRelationshipsWithSchema("SELECT FROM", nil)
 	require.Error(t, err)
 	assert.Nil(t, relationships)
+}
+
+// TestExtractJoinRelationshipsWithSchema_MatchesInternalExtractor verifies exported behavior
+// matches the shared internal extraction implementation for the same parsed query.
+func TestExtractJoinRelationshipsWithSchema_MatchesInternalExtractor(t *testing.T) {
+	query := `
+		SELECT o.id
+		FROM orders o
+		JOIN customers c ON o.customer_id = c.id
+	`
+	schemaMap := map[string][]ColumnSchema{
+		"customers": {
+			{Name: "id", PGType: "bigint", IsPrimaryKey: true},
+		},
+		"orders": {
+			{Name: "id", PGType: "bigint", IsPrimaryKey: true},
+			{Name: "customer_id", PGType: "bigint"},
+		},
+	}
+
+	pq, err := postgresparser.ParseSQL(query)
+	require.NoError(t, err)
+
+	gotExported, err := ExtractJoinRelationshipsWithSchema(query, schemaMap)
+	require.NoError(t, err)
+	gotInternal := extractJoinRelationshipsWithSchema(pq, schemaMap)
+
+	assert.Equal(t, gotInternal, gotExported)
+}
+
+// TestExtractJoinRelationshipsWithSchema_NilSchemaMap verifies nil schema does not fail
+// and returns no inferred relationships.
+func TestExtractJoinRelationshipsWithSchema_NilSchemaMap(t *testing.T) {
+	query := `
+		SELECT o.id
+		FROM orders o
+		JOIN customers c ON o.customer_id = c.id
+	`
+
+	relationships, err := ExtractJoinRelationshipsWithSchema(query, nil)
+	require.NoError(t, err)
+	assert.Empty(t, relationships)
 }
