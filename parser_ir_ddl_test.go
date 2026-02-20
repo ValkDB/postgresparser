@@ -505,6 +505,439 @@ func TestIR_DDL_CreateTableTypeCoverage(t *testing.T) {
 	}
 }
 
+func TestIR_DDL_CommentOn_Table(t *testing.T) {
+	tests := []struct {
+		name           string
+		sql            string
+		wantObjectType string
+		wantSchema     string
+		wantObjectName string
+		wantTarget     string
+		wantColumns    []string
+		wantComment    string
+		wantTables     int
+		wantFirstTable *TableRef
+	}{
+		{
+			name:           "issue34 table comment",
+			sql:            `COMMENT ON TABLE public.users IS 'Stores user account information';`,
+			wantObjectType: "TABLE",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users",
+			wantComment:    "Stores user account information",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Schema: "public", Name: "users", Type: TableTypeBase, Raw: "public.users"},
+		},
+		{
+			name:           "issue34 column comment",
+			sql:            `COMMENT ON COLUMN public.users.email IS 'User email address, must be unique';`,
+			wantObjectType: "COLUMN",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users.email",
+			wantColumns:    []string{"email"},
+			wantComment:    "User email address, must be unique",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Schema: "public", Name: "users", Type: TableTypeBase, Raw: "public.users"},
+		},
+		{
+			name:           "issue34 index comment",
+			sql:            `COMMENT ON INDEX public.idx_bookings_dates IS 'Composite index for efficient date range queries on bookings';`,
+			wantObjectType: "INDEX",
+			wantSchema:     "public",
+			wantObjectName: "idx_bookings_dates",
+			wantTarget:     "public.idx_bookings_dates",
+			wantComment:    "Composite index for efficient date range queries on bookings",
+			wantTables:     0,
+		},
+		{
+			name:           "unqualified column target",
+			sql:            `COMMENT ON COLUMN users.email IS 'x';`,
+			wantObjectType: "COLUMN",
+			wantObjectName: "users",
+			wantTarget:     "users.email",
+			wantColumns:    []string{"email"},
+			wantComment:    "x",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Name: "users", Type: TableTypeBase, Raw: "users"},
+		},
+		{
+			name:           "quoted dotted identifiers in column target",
+			sql:            `COMMENT ON COLUMN public."my.table"."my.col" IS 'x';`,
+			wantObjectType: "COLUMN",
+			wantSchema:     "public",
+			wantObjectName: `"my.table"`,
+			wantTarget:     `public."my.table"."my.col"`,
+			wantColumns:    []string{`"my.col"`},
+			wantComment:    "x",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Schema: "public", Name: `"my.table"`, Type: TableTypeBase, Raw: `public."my.table"`},
+		},
+		{
+			name:           "unquoted dotted identifiers are treated as qualifiers",
+			sql:            `COMMENT ON COLUMN public.my.table.my.col IS 'x';`,
+			wantObjectType: "COLUMN",
+			wantSchema:     "public.my.table",
+			wantObjectName: "my",
+			wantTarget:     "public.my.table.my.col",
+			wantColumns:    []string{"col"},
+			wantComment:    "x",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Schema: "public.my.table", Name: "my", Type: TableTypeBase, Raw: "public.my.table.my"},
+		},
+		{
+			name:           "null comment literal",
+			sql:            `COMMENT ON TABLE public.users IS NULL;`,
+			wantObjectType: "TABLE",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users",
+			wantComment:    "",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Schema: "public", Name: "users", Type: TableTypeBase, Raw: "public.users"},
+		},
+		{
+			name:           "escaped string literal",
+			sql:            `COMMENT ON TABLE public.users IS E'line1\nline2';`,
+			wantObjectType: "TABLE",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users",
+			wantComment:    "line1\nline2",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Schema: "public", Name: "users", Type: TableTypeBase, Raw: "public.users"},
+		},
+		{
+			name:           "dollar quoted string literal",
+			sql:            `COMMENT ON TABLE public.users IS $tag$Stores "quoted" data$tag$;`,
+			wantObjectType: "TABLE",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users",
+			wantComment:    `Stores "quoted" data`,
+			wantTables:     1,
+			wantFirstTable: &TableRef{Schema: "public", Name: "users", Type: TableTypeBase, Raw: "public.users"},
+		},
+		{
+			name:           "foreign table comment",
+			sql:            `COMMENT ON FOREIGN TABLE public.remote_users IS 'Foreign mirror';`,
+			wantObjectType: "FOREIGN TABLE",
+			wantSchema:     "public",
+			wantObjectName: "remote_users",
+			wantTarget:     "public.remote_users",
+			wantComment:    "Foreign mirror",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Schema: "public", Name: "remote_users", Type: TableTypeBase, Raw: "public.remote_users"},
+		},
+		{
+			name:           "type comment",
+			sql:            `COMMENT ON TYPE public.email_address IS 'Type used for email addresses';`,
+			wantObjectType: "TYPE",
+			wantSchema:     "public",
+			wantObjectName: "email_address",
+			wantTarget:     "public.email_address",
+			wantComment:    "Type used for email addresses",
+			wantTables:     0,
+		},
+		{
+			name:           "schema comment",
+			sql:            `COMMENT ON SCHEMA public IS 'Application schema';`,
+			wantObjectType: "SCHEMA",
+			wantObjectName: "public",
+			wantTarget:     "public",
+			wantComment:    "Application schema",
+			wantTables:     0,
+		},
+		{
+			name:           "unknown object type (FUNCTION)",
+			sql:            `COMMENT ON FUNCTION public.my_func(integer) IS 'Does something';`,
+			wantObjectType: "UNKNOWN",
+			wantComment:    "Does something",
+			wantTables:     0,
+		},
+		{
+			name:           "doubled single-quote escaping",
+			sql:            `COMMENT ON TABLE users IS 'it''s a test';`,
+			wantObjectType: "TABLE",
+			wantObjectName: "users",
+			wantTarget:     "users",
+			wantComment:    "it's a test",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Name: "users", Type: TableTypeBase, Raw: "users"},
+		},
+		{
+			name:           "empty string comment",
+			sql:            `COMMENT ON TABLE users IS '';`,
+			wantObjectType: "TABLE",
+			wantObjectName: "users",
+			wantTarget:     "users",
+			wantComment:    "",
+			wantTables:     1,
+			wantFirstTable: &TableRef{Name: "users", Type: TableTypeBase, Raw: "users"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ir := parseAssertNoError(t, tc.sql)
+
+			assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+			require.Len(t, ir.DDLActions, 1, "action count mismatch")
+			act := ir.DDLActions[0]
+			assert.Equal(t, DDLComment, act.Type, "expected COMMENT action")
+			assert.Equal(t, tc.wantObjectType, act.ObjectType, "object type mismatch")
+			assert.Equal(t, tc.wantSchema, act.Schema, "schema mismatch")
+			assert.Equal(t, tc.wantObjectName, act.ObjectName, "object name mismatch")
+			assert.Equal(t, tc.wantTarget, act.Target, "target mismatch")
+			assert.Equal(t, tc.wantColumns, act.Columns, "column list mismatch")
+			assert.Equal(t, tc.wantComment, act.Comment, "comment mismatch")
+
+			require.Len(t, ir.Tables, tc.wantTables, "tables count mismatch")
+			if tc.wantFirstTable != nil {
+				assert.Equal(t, *tc.wantFirstTable, ir.Tables[0], "first table ref mismatch")
+			}
+		})
+	}
+}
+
+func TestIR_DDL_CreateTableFieldComments_Table(t *testing.T) {
+	tests := []struct {
+		name               string
+		sql                string
+		opts               ParseOptions
+		wantCommentsByCol  map[string][]string
+		wantColumnSequence []string
+	}{
+		{
+			name: "issue25 example",
+			sql: `CREATE TABLE public.users (
+    -- [Attribute("Just an example")]
+    -- required, min 5, max 55
+    name        text,
+
+    -- single-column FK, inline
+    org_id      integer     REFERENCES public.organizations(id)
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				"name":   {`[Attribute("Just an example")]`, "required, min 5, max 55"},
+				"org_id": {"single-column FK, inline"},
+			},
+			wantColumnSequence: []string{"name", "org_id"},
+		},
+		{
+			name: "disabled by default",
+			sql: `CREATE TABLE public.users (
+    -- should not be extracted by default
+    name text
+);`,
+			wantCommentsByCol: map[string][]string{
+				"name": {},
+			},
+			wantColumnSequence: []string{"name"},
+		},
+		{
+			name: "skips constraint comments",
+			sql: `CREATE TABLE public.users (
+    -- user id
+    id integer,
+    -- should not attach to any column
+    CONSTRAINT users_pk PRIMARY KEY (id),
+    -- user email
+    email text
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				"id":    {"user id"},
+				"email": {"user email"},
+			},
+			wantColumnSequence: []string{"id", "email"},
+		},
+		{
+			name: "quoted and unquoted identifiers",
+			sql: `CREATE TABLE public.users (
+    -- case-sensitive display email
+    "Email" text,
+    -- lowercase fallback
+    email text
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				`"Email"`: {"case-sensitive display email"},
+				"email":   {"lowercase fallback"},
+			},
+			wantColumnSequence: []string{`"Email"`, "email"},
+		},
+		{
+			name: "handles defaults with commas and functions",
+			sql: `CREATE TABLE public.events (
+    -- payload metadata
+    payload jsonb DEFAULT jsonb_build_object('a', 1, 'b', 2),
+    -- created marker
+    created_at timestamptz DEFAULT now()
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				"payload":    {"payload metadata"},
+				"created_at": {"created marker"},
+			},
+			wantColumnSequence: []string{"payload", "created_at"},
+		},
+		{
+			name: "inline trailing comments are treated as next-element comments",
+			sql: `CREATE TABLE public.users (
+    id integer, -- not attached
+    -- attached to email
+    email text
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				"id":    {},
+				"email": {"not attached", "attached to email"},
+			},
+			wantColumnSequence: []string{"id", "email"},
+		},
+		{
+			name: "line comments retained while block comments ignored",
+			sql: `CREATE TABLE public.users (
+    /* ignored */
+    -- picked up
+    name text
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				"name": {"picked up"},
+			},
+			wantColumnSequence: []string{"name"},
+		},
+	}
+
+	commentsByName := func(cols []DDLColumn) map[string][]string {
+		out := make(map[string][]string, len(cols))
+		for _, col := range cols {
+			buf := make([]string, len(col.Comment))
+			copy(buf, col.Comment)
+			out[col.Name] = buf
+		}
+		return out
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				ir  *ParsedQuery
+				err error
+			)
+			if tc.opts == (ParseOptions{}) {
+				ir = parseAssertNoError(t, tc.sql)
+			} else {
+				ir, err = ParseSQLWithOptions(tc.sql, tc.opts)
+				require.NoError(t, err, "ParseSQLWithOptions failed")
+			}
+
+			assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+			require.Len(t, ir.DDLActions, 1, "action count mismatch")
+			act := ir.DDLActions[0]
+			require.Len(t, act.ColumnDetails, len(tc.wantColumnSequence), "column count mismatch")
+
+			gotSequence := make([]string, 0, len(act.ColumnDetails))
+			for _, col := range act.ColumnDetails {
+				gotSequence = append(gotSequence, col.Name)
+			}
+			assert.Equal(t, tc.wantColumnSequence, gotSequence, "column order mismatch")
+			assert.Equal(t, tc.wantCommentsByCol, commentsByName(act.ColumnDetails), "column comments mismatch")
+		})
+	}
+}
+
+func TestExtractCreateTableFieldCommentsByColumn_Table(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want map[string][]string
+	}{
+		{
+			name: "empty input",
+			sql:  "",
+			want: nil,
+		},
+		{
+			name: "issue25 extraction",
+			sql: `CREATE TABLE public.users (
+    -- [Attribute("Just an example")]
+    -- required, min 5, max 55
+    name        text,
+
+    -- single-column FK, inline
+    org_id      integer     REFERENCES public.organizations(id)
+);`,
+			want: map[string][]string{
+				"name":   {`[Attribute("Just an example")]`, "required, min 5, max 55"},
+				"org_id": {"single-column FK, inline"},
+			},
+		},
+		{
+			name: "constraint comments are skipped",
+			sql: `CREATE TABLE t (
+    -- comment for id
+    id integer,
+    -- should not bind
+    CONSTRAINT t_pk PRIMARY KEY (id),
+    -- comment for email
+    email text
+);`,
+			want: map[string][]string{
+				"id":    {"comment for id"},
+				"email": {"comment for email"},
+			},
+		},
+		{
+			name: "quoted and unquoted identifiers normalize differently",
+			sql: `CREATE TABLE t (
+    -- quoted
+    "Email" text,
+    -- unquoted
+    email text
+);`,
+			want: map[string][]string{
+				"Email": {"quoted"},
+				"email": {"unquoted"},
+			},
+		},
+		{
+			name: "unquoted uppercase identifier normalizes to lowercase",
+			sql: `CREATE TABLE t (
+    -- uppercase spelling
+    NAME text
+);`,
+			want: map[string][]string{
+				"name": {"uppercase spelling"},
+			},
+		},
+		{
+			name: "embedded commas and dollar strings do not break splitting",
+			sql: `CREATE TABLE t (
+    -- payload docs
+    payload text DEFAULT $tag$a,b,c$tag$,
+    -- tags docs
+    tags text[] DEFAULT ARRAY['x','y']
+);`,
+			want: map[string][]string{
+				"payload": {"payload docs"},
+				"tags":    {"tags docs"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractCreateTableFieldCommentsByColumn(tc.sql)
+			assert.Equal(t, tc.want, got, "extracted comments mismatch")
+		})
+	}
+}
+
 func TestIR_DDL_AlterTableDropColumn(t *testing.T) {
 	tests := []struct {
 		name      string

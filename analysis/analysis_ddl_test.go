@@ -2,7 +2,10 @@
 package analysis
 
 import (
+	"reflect"
 	"testing"
+
+	"github.com/valkdb/postgresparser"
 )
 
 // TestAnalyzeSQL_DDL_DropTable validates DROP TABLE metadata including IF EXISTS, CASCADE, and multi-table.
@@ -413,7 +416,7 @@ func TestAnalyzeSQL_DDL_CreateTable(t *testing.T) {
 		{Name: "created_at", Type: "timestamp without time zone", Nullable: false, Default: "CURRENT_TIMESTAMP"},
 	}
 	for i := range want {
-		if act.ColumnDetails[i] != want[i] {
+		if !reflect.DeepEqual(act.ColumnDetails[i], want[i]) {
 			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
 		}
 	}
@@ -464,7 +467,7 @@ func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse(t *testing.
 		t.Fatalf("expected %d column details, got %d: %+v", len(want), len(act.ColumnDetails), act.ColumnDetails)
 	}
 	for i := range want {
-		if act.ColumnDetails[i] != want[i] {
+		if !reflect.DeepEqual(act.ColumnDetails[i], want[i]) {
 			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
 		}
 	}
@@ -515,7 +518,7 @@ func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse_NoSchema(t 
 		t.Fatalf("expected %d column details, got %d: %+v", len(want), len(act.ColumnDetails), act.ColumnDetails)
 	}
 	for i := range want {
-		if act.ColumnDetails[i] != want[i] {
+		if !reflect.DeepEqual(act.ColumnDetails[i], want[i]) {
 			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
 		}
 	}
@@ -653,6 +656,233 @@ func TestAnalyzeSQL_DDL_CreateTableTypeCoverage(t *testing.T) {
 		if col.Default != "" {
 			t.Fatalf("expected empty default for %s, got %q", colName, col.Default)
 		}
+	}
+}
+
+func TestAnalyzeSQL_DDL_CommentOn_Table(t *testing.T) {
+	tests := []struct {
+		name           string
+		sql            string
+		wantObjectType string
+		wantSchema     string
+		wantObjectName string
+		wantTarget     string
+		wantColumns    []string
+		wantComment    string
+		wantTables     int
+	}{
+		{
+			name:           "issue34 table comment",
+			sql:            `COMMENT ON TABLE public.users IS 'Stores user account information';`,
+			wantObjectType: "TABLE",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users",
+			wantComment:    "Stores user account information",
+			wantTables:     1,
+		},
+		{
+			name:           "issue34 column comment",
+			sql:            `COMMENT ON COLUMN public.users.email IS 'User email address, must be unique';`,
+			wantObjectType: "COLUMN",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users.email",
+			wantColumns:    []string{"email"},
+			wantComment:    "User email address, must be unique",
+			wantTables:     1,
+		},
+		{
+			name:           "issue34 index comment",
+			sql:            `COMMENT ON INDEX public.idx_bookings_dates IS 'Composite index for efficient date range queries on bookings';`,
+			wantObjectType: "INDEX",
+			wantSchema:     "public",
+			wantObjectName: "idx_bookings_dates",
+			wantTarget:     "public.idx_bookings_dates",
+			wantComment:    "Composite index for efficient date range queries on bookings",
+			wantTables:     0,
+		},
+		{
+			name:           "unqualified column target",
+			sql:            `COMMENT ON COLUMN users.email IS 'x';`,
+			wantObjectType: "COLUMN",
+			wantObjectName: "users",
+			wantTarget:     "users.email",
+			wantColumns:    []string{"email"},
+			wantComment:    "x",
+			wantTables:     1,
+		},
+		{
+			name:           "quoted dotted identifiers in column target",
+			sql:            `COMMENT ON COLUMN public."my.table"."my.col" IS 'x';`,
+			wantObjectType: "COLUMN",
+			wantSchema:     "public",
+			wantObjectName: `"my.table"`,
+			wantTarget:     `public."my.table"."my.col"`,
+			wantColumns:    []string{`"my.col"`},
+			wantComment:    "x",
+			wantTables:     1,
+		},
+		{
+			name:           "unquoted dotted identifiers are treated as qualifiers",
+			sql:            `COMMENT ON COLUMN public.my.table.my.col IS 'x';`,
+			wantObjectType: "COLUMN",
+			wantSchema:     "public.my.table",
+			wantObjectName: "my",
+			wantTarget:     "public.my.table.my.col",
+			wantColumns:    []string{"col"},
+			wantComment:    "x",
+			wantTables:     1,
+		},
+		{
+			name:           "null comment",
+			sql:            `COMMENT ON TABLE public.users IS NULL;`,
+			wantObjectType: "TABLE",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users",
+			wantComment:    "",
+			wantTables:     1,
+		},
+		{
+			name:           "escaped comment literal",
+			sql:            `COMMENT ON TABLE public.users IS E'line1\nline2';`,
+			wantObjectType: "TABLE",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users",
+			wantComment:    "line1\nline2",
+			wantTables:     1,
+		},
+		{
+			name:           "dollar quoted comment literal",
+			sql:            `COMMENT ON TABLE public.users IS $$Stores "quoted" data$$;`,
+			wantObjectType: "TABLE",
+			wantSchema:     "public",
+			wantObjectName: "users",
+			wantTarget:     "public.users",
+			wantComment:    `Stores "quoted" data`,
+			wantTables:     1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := AnalyzeSQL(tc.sql)
+			if err != nil {
+				t.Fatalf("AnalyzeSQL failed: %v", err)
+			}
+			if res.Command != SQLCommandDDL {
+				t.Fatalf("expected DDL command, got %s", res.Command)
+			}
+			if len(res.DDLActions) != 1 {
+				t.Fatalf("expected 1 DDL action, got %d", len(res.DDLActions))
+			}
+			act := res.DDLActions[0]
+			if act.Type != "COMMENT" {
+				t.Fatalf("expected COMMENT, got %s", act.Type)
+			}
+			if act.ObjectType != tc.wantObjectType {
+				t.Fatalf("expected object type %s, got %s", tc.wantObjectType, act.ObjectType)
+			}
+			if act.Schema != tc.wantSchema || act.ObjectName != tc.wantObjectName {
+				t.Fatalf("expected object %s.%s, got schema=%q object=%q", tc.wantSchema, tc.wantObjectName, act.Schema, act.ObjectName)
+			}
+			if act.Target != tc.wantTarget {
+				t.Fatalf("expected target %q, got %q", tc.wantTarget, act.Target)
+			}
+			if !reflect.DeepEqual(act.Columns, tc.wantColumns) {
+				t.Fatalf("expected columns %+v, got %+v", tc.wantColumns, act.Columns)
+			}
+			if act.Comment != tc.wantComment {
+				t.Fatalf("comment mismatch: got %q want %q", act.Comment, tc.wantComment)
+			}
+			if len(res.Tables) != tc.wantTables {
+				t.Fatalf("expected %d table refs, got %d", tc.wantTables, len(res.Tables))
+			}
+		})
+	}
+}
+
+func TestAnalyzeSQL_DDL_CreateTableFieldComments_Table(t *testing.T) {
+	tests := []struct {
+		name              string
+		sql               string
+		opts              postgresparser.ParseOptions
+		wantCommentsByCol map[string][]string
+	}{
+		{
+			name: "issue25 exact example",
+			sql: `CREATE TABLE public.users (
+    -- [Attribute("Just an example")]
+    -- required, min 5, max 55
+    name        text,
+
+    -- single-column FK, inline
+    org_id      integer     REFERENCES public.organizations(id)
+);`,
+			opts: postgresparser.ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				"name":   {`[Attribute("Just an example")]`, "required, min 5, max 55"},
+				"org_id": {"single-column FK, inline"},
+			},
+		},
+		{
+			name: "disabled by default",
+			sql: `CREATE TABLE public.users (
+    -- should not be extracted
+    name text
+);`,
+			opts: postgresparser.ParseOptions{},
+			wantCommentsByCol: map[string][]string{
+				"name": {},
+			},
+		},
+		{
+			name: "skips constraint comments",
+			sql: `CREATE TABLE public.users (
+    -- user id
+    id integer,
+    -- should not attach to any column
+    CONSTRAINT users_pk PRIMARY KEY (id),
+    -- user email
+    email text
+);`,
+			opts: postgresparser.ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				"id":    {"user id"},
+				"email": {"user email"},
+			},
+		},
+	}
+
+	commentsByName := func(cols []SQLDDLColumn) map[string][]string {
+		out := make(map[string][]string, len(cols))
+		for _, col := range cols {
+			buf := make([]string, len(col.Comment))
+			copy(buf, col.Comment)
+			out[col.Name] = buf
+		}
+		return out
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := AnalyzeSQLWithOptions(tc.sql, tc.opts)
+			if err != nil {
+				t.Fatalf("AnalyzeSQLWithOptions failed: %v", err)
+			}
+			if res.Command != SQLCommandDDL {
+				t.Fatalf("expected DDL command, got %s", res.Command)
+			}
+			if len(res.DDLActions) != 1 {
+				t.Fatalf("expected 1 DDL action, got %d", len(res.DDLActions))
+			}
+			got := commentsByName(res.DDLActions[0].ColumnDetails)
+			if !reflect.DeepEqual(got, tc.wantCommentsByCol) {
+				t.Fatalf("unexpected comments by column: got=%v want=%v", got, tc.wantCommentsByCol)
+			}
+		})
 	}
 }
 

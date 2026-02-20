@@ -476,3 +476,254 @@ func TestParseSQLStrictTable(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSQLWithOptions_Table(t *testing.T) {
+	tests := []struct {
+		name        string
+		sql         string
+		opts        ParseOptions
+		assertQuery func(t *testing.T, q *ParsedQuery)
+	}{
+		{
+			name: "create table field comment enabled",
+			sql: `CREATE TABLE public.users (
+    -- user name
+    name text
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			assertQuery: func(t *testing.T, q *ParsedQuery) {
+				t.Helper()
+				require.Len(t, q.DDLActions, 1)
+				require.Len(t, q.DDLActions[0].ColumnDetails, 1)
+				assert.Equal(t, []string{"user name"}, q.DDLActions[0].ColumnDetails[0].Comment)
+			},
+		},
+		{
+			name: "create table field comment disabled by default",
+			sql: `CREATE TABLE public.users (
+    -- should not be extracted
+    name text
+);`,
+			opts: ParseOptions{},
+			assertQuery: func(t *testing.T, q *ParsedQuery) {
+				t.Helper()
+				require.Len(t, q.DDLActions, 1)
+				require.Len(t, q.DDLActions[0].ColumnDetails, 1)
+				assert.Empty(t, q.DDLActions[0].ColumnDetails[0].Comment)
+			},
+		},
+		{
+			name: "issue25 exact example",
+			sql: `CREATE TABLE public.users (
+    -- [Attribute("Just an example")]
+    -- required, min 5, max 55
+    name        text,
+
+    -- single-column FK, inline
+    org_id      integer     REFERENCES public.organizations(id)
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			assertQuery: func(t *testing.T, q *ParsedQuery) {
+				t.Helper()
+				require.Len(t, q.DDLActions, 1)
+				require.Len(t, q.DDLActions[0].ColumnDetails, 2)
+				assert.Equal(t, []string{`[Attribute("Just an example")]`, "required, min 5, max 55"}, q.DDLActions[0].ColumnDetails[0].Comment)
+				assert.Equal(t, []string{"single-column FK, inline"}, q.DDLActions[0].ColumnDetails[1].Comment)
+			},
+		},
+		{
+			name: "comment on index always on with default options",
+			sql:  `COMMENT ON INDEX public.idx_bookings_dates IS 'Composite index for efficient date range queries on bookings';`,
+			opts: ParseOptions{},
+			assertQuery: func(t *testing.T, q *ParsedQuery) {
+				t.Helper()
+				require.Len(t, q.DDLActions, 1)
+				assert.Equal(t, DDLComment, q.DDLActions[0].Type)
+				assert.Equal(t, "INDEX", q.DDLActions[0].ObjectType)
+				assert.Equal(t, "Composite index for efficient date range queries on bookings", q.DDLActions[0].Comment)
+			},
+		},
+		{
+			name: "comment on column still on when field-comment flag enabled",
+			sql:  `COMMENT ON COLUMN public.users.email IS 'User email address, must be unique';`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			assertQuery: func(t *testing.T, q *ParsedQuery) {
+				t.Helper()
+				require.Len(t, q.DDLActions, 1)
+				assert.Equal(t, DDLComment, q.DDLActions[0].Type)
+				assert.Equal(t, "COLUMN", q.DDLActions[0].ObjectType)
+				assert.Equal(t, []string{"email"}, q.DDLActions[0].Columns)
+				assert.Equal(t, "User email address, must be unique", q.DDLActions[0].Comment)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := ParseSQLWithOptions(tc.sql, tc.opts)
+			require.NoError(t, err)
+			require.NotNil(t, q)
+			if tc.assertQuery != nil {
+				tc.assertQuery(t, q)
+			}
+		})
+	}
+}
+
+func TestParseSQLAllWithOptions_Table(t *testing.T) {
+	tests := []struct {
+		name        string
+		sql         string
+		opts        ParseOptions
+		assertBatch func(t *testing.T, batch *ParseBatchResult)
+	}{
+		{
+			name: "create table field comments enabled across statements",
+			sql: `CREATE TABLE users (
+    -- first
+    name text
+);
+CREATE TABLE users2 (
+    -- second
+    email text
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			assertBatch: func(t *testing.T, batch *ParseBatchResult) {
+				t.Helper()
+				require.Len(t, batch.Statements, 2)
+				require.NotNil(t, batch.Statements[0].Query)
+				require.NotNil(t, batch.Statements[1].Query)
+				assert.Equal(t, []string{"first"}, batch.Statements[0].Query.DDLActions[0].ColumnDetails[0].Comment)
+				assert.Equal(t, []string{"second"}, batch.Statements[1].Query.DDLActions[0].ColumnDetails[0].Comment)
+			},
+		},
+		{
+			name: "create table field comments disabled by default across statements",
+			sql: `CREATE TABLE users (
+    -- first
+    name text
+);
+CREATE TABLE users2 (
+    -- second
+    email text
+);`,
+			opts: ParseOptions{},
+			assertBatch: func(t *testing.T, batch *ParseBatchResult) {
+				t.Helper()
+				require.Len(t, batch.Statements, 2)
+				require.NotNil(t, batch.Statements[0].Query)
+				require.NotNil(t, batch.Statements[1].Query)
+				assert.Empty(t, batch.Statements[0].Query.DDLActions[0].ColumnDetails[0].Comment)
+				assert.Empty(t, batch.Statements[1].Query.DDLActions[0].ColumnDetails[0].Comment)
+			},
+		},
+		{
+			name: "issue34 comments always on in batch",
+			sql: `COMMENT ON TABLE public.users IS 'Stores user account information';
+COMMENT ON COLUMN public.users.email IS 'User email address, must be unique';
+COMMENT ON INDEX public.idx_bookings_dates IS 'Composite index for efficient date range queries on bookings';`,
+			opts: ParseOptions{},
+			assertBatch: func(t *testing.T, batch *ParseBatchResult) {
+				t.Helper()
+				require.Len(t, batch.Statements, 3)
+				for i := range batch.Statements {
+					require.NotNil(t, batch.Statements[i].Query)
+					require.Len(t, batch.Statements[i].Query.DDLActions, 1)
+					assert.Equal(t, DDLComment, batch.Statements[i].Query.DDLActions[0].Type)
+				}
+				assert.Equal(t, "Stores user account information", batch.Statements[0].Query.DDLActions[0].Comment)
+				assert.Equal(t, "User email address, must be unique", batch.Statements[1].Query.DDLActions[0].Comment)
+				assert.Equal(t, "Composite index for efficient date range queries on bookings", batch.Statements[2].Query.DDLActions[0].Comment)
+			},
+		},
+		{
+			name: "mixed create-table and comment with default options",
+			sql: `CREATE TABLE users (
+    -- hidden by default
+    name text
+);
+COMMENT ON TABLE public.users IS 'Stores user account information';`,
+			opts: ParseOptions{},
+			assertBatch: func(t *testing.T, batch *ParseBatchResult) {
+				t.Helper()
+				require.Len(t, batch.Statements, 2)
+				require.NotNil(t, batch.Statements[0].Query)
+				require.NotNil(t, batch.Statements[1].Query)
+				assert.Empty(t, batch.Statements[0].Query.DDLActions[0].ColumnDetails[0].Comment)
+				assert.Equal(t, DDLComment, batch.Statements[1].Query.DDLActions[0].Type)
+				assert.Equal(t, "Stores user account information", batch.Statements[1].Query.DDLActions[0].Comment)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			batch, err := ParseSQLAllWithOptions(tc.sql, tc.opts)
+			require.NoError(t, err)
+			require.NotNil(t, batch)
+			if tc.assertBatch != nil {
+				tc.assertBatch(t, batch)
+			}
+		})
+	}
+}
+
+func TestParseSQLStrictWithOptions_Table(t *testing.T) {
+	tests := []struct {
+		name        string
+		sql         string
+		opts        ParseOptions
+		wantErrIs   error
+		assertQuery func(t *testing.T, q *ParsedQuery)
+	}{
+		{
+			name: "create table field comments enabled",
+			sql: `CREATE TABLE users (
+    -- strict path
+    name text
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			assertQuery: func(t *testing.T, q *ParsedQuery) {
+				t.Helper()
+				require.Len(t, q.DDLActions, 1)
+				require.Len(t, q.DDLActions[0].ColumnDetails, 1)
+				assert.Equal(t, []string{"strict path"}, q.DDLActions[0].ColumnDetails[0].Comment)
+			},
+		},
+		{
+			name: "comment on index always on in strict mode",
+			sql:  `COMMENT ON INDEX public.idx_bookings_dates IS 'Composite index for efficient date range queries on bookings';`,
+			opts: ParseOptions{},
+			assertQuery: func(t *testing.T, q *ParsedQuery) {
+				t.Helper()
+				require.Len(t, q.DDLActions, 1)
+				assert.Equal(t, DDLComment, q.DDLActions[0].Type)
+				assert.Equal(t, "INDEX", q.DDLActions[0].ObjectType)
+			},
+		},
+		{
+			name:      "strict rejects multi statement input",
+			sql:       "SELECT 1; SELECT 2;",
+			opts:      ParseOptions{IncludeCreateTableFieldComments: true},
+			wantErrIs: ErrMultipleStatements,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := ParseSQLStrictWithOptions(tc.sql, tc.opts)
+			if tc.wantErrIs != nil {
+				require.Error(t, err)
+				assert.Nil(t, result)
+				assert.ErrorIs(t, err, tc.wantErrIs)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			if tc.assertQuery != nil {
+				tc.assertQuery(t, result)
+			}
+		})
+	}
+}

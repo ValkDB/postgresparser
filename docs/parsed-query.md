@@ -3,6 +3,10 @@
 This document defines how to interpret parser outputs:
 - `postgresparser.ParseSQL` / `postgresparser.ParseSQLStrict` output (`ParsedQuery` in `ir.go`)
 - `postgresparser.ParseSQLAll` output (`ParseBatchResult` in `ir.go`)
+- Options-enabled variants:
+  - `postgresparser.ParseSQLWithOptions`
+  - `postgresparser.ParseSQLAllWithOptions`
+  - `postgresparser.ParseSQLStrictWithOptions`
 
 ## Purpose
 
@@ -23,6 +27,7 @@ It is not designed for:
 - `ParseSQL` parses only the first statement in the input string.
 - `ParseSQLAll` parses all statements in the input string and returns `ParseBatchResult`.
 - `ParseSQLStrict` returns an error unless exactly one statement is present.
+- `ParseSQLWithOptions` / `ParseSQLAllWithOptions` / `ParseSQLStrictWithOptions` behave identically while enabling optional metadata extraction flags.
 - Unrelated sections are expected to be empty for a given command.
 - `Command` is the primary discriminator for which sections to read.
 
@@ -75,24 +80,41 @@ It is not designed for:
 - `DDLActions`: Normalized DDL actions extracted from DDL statements.
 
 Common DDL action fields:
-- `Type`: `CREATE_TABLE`, `DROP_TABLE`, `DROP_COLUMN`, `ALTER_TABLE`, `CREATE_INDEX`, `DROP_INDEX`, `TRUNCATE`.
+- `Type`: `CREATE_TABLE`, `DROP_TABLE`, `DROP_COLUMN`, `ALTER_TABLE`, `CREATE_INDEX`, `DROP_INDEX`, `TRUNCATE`, `COMMENT`.
 - `ObjectName`: Unqualified target object identifier.
+- `ObjectType`: Object category for action-specific handling (for example `TABLE`, `COLUMN`, `INDEX` on `COMMENT` actions).
 - `Schema`: Parsed schema when available.
 - `Columns`: Column names or indexed expressions relevant to the action.
 - `Flags`: Modifiers like `IF_EXISTS`, `IF_NOT_EXISTS`, `CASCADE`, `CONCURRENTLY`, etc.
 - `IndexType`: Index method for `CREATE_INDEX` (for example `btree`, `gin`).
 - `ColumnDetails`: Column metadata for `CREATE_TABLE` actions.
+- `Target`: Generic fully-qualified target path for comment-like actions (for example `public.users.email`).
+- `Comment`: Comment text for `COMMENT` actions.
 
 `ColumnDetails` (`[]DDLColumn`) fields:
 - `Name`
 - `Type`
 - `Nullable`
 - `Default`
+- `Comment` (`[]string`, optional): inline `--` comment lines preceding a column definition when `IncludeCreateTableFieldComments=true`.
 
 Current DDL convention:
 - `CREATE_TABLE` populates `ColumnDetails`.
+- `COMMENT ON ...` populates `DDLActions` with `Type=COMMENT`.
 - Other DDL actions currently do not populate `ColumnDetails`.
 - `ALTER_TABLE` uses `Columns` and `Flags` for operation-level details.
+
+## Parse Options
+
+`ParseOptions` currently supports:
+
+- `IncludeCreateTableFieldComments`:
+  - default `false`
+  - when `true`, captures inline `--` field comments in `CREATE TABLE` into `DDLActions[].ColumnDetails[].Comment`.
+
+Notes:
+- This option only affects inline `--` field comments in `CREATE TABLE`.
+- `COMMENT ON ...` statement extraction is always enabled.
 
 ## Command-to-Section Expectations
 

@@ -13,7 +13,13 @@ import (
 // Use AnalyzeSQLAll for full multi-statement analysis, or AnalyzeSQLStrict to
 // enforce exactly one statement.
 func AnalyzeSQL(sql string) (*SQLAnalysis, error) {
-	pq, err := postgresparser.ParseSQL(sql)
+	return AnalyzeSQLWithOptions(sql, postgresparser.ParseOptions{})
+}
+
+// AnalyzeSQLWithOptions parses and analyzes only the first SQL statement while
+// enabling optional metadata extraction flags.
+func AnalyzeSQLWithOptions(sql string, opts postgresparser.ParseOptions) (*SQLAnalysis, error) {
+	pq, err := postgresparser.ParseSQLWithOptions(sql, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse SQL: %w", err)
 	}
@@ -22,7 +28,13 @@ func AnalyzeSQL(sql string) (*SQLAnalysis, error) {
 
 // AnalyzeSQLAll parses all SQL statements and returns a batch analysis result.
 func AnalyzeSQLAll(sql string) (*SQLAnalysisBatchResult, error) {
-	batch, err := postgresparser.ParseSQLAll(sql)
+	return AnalyzeSQLAllWithOptions(sql, postgresparser.ParseOptions{})
+}
+
+// AnalyzeSQLAllWithOptions parses all SQL statements and enables optional
+// metadata extraction flags.
+func AnalyzeSQLAllWithOptions(sql string, opts postgresparser.ParseOptions) (*SQLAnalysisBatchResult, error) {
+	batch, err := postgresparser.ParseSQLAllWithOptions(sql, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse SQL: %w", err)
 	}
@@ -31,7 +43,13 @@ func AnalyzeSQLAll(sql string) (*SQLAnalysisBatchResult, error) {
 
 // AnalyzeSQLStrict parses SQL only when it contains exactly one statement.
 func AnalyzeSQLStrict(sql string) (*SQLAnalysis, error) {
-	pq, err := postgresparser.ParseSQLStrict(sql)
+	return AnalyzeSQLStrictWithOptions(sql, postgresparser.ParseOptions{})
+}
+
+// AnalyzeSQLStrictWithOptions parses SQL only when it contains exactly one
+// statement and enables optional metadata extraction flags.
+func AnalyzeSQLStrictWithOptions(sql string, opts postgresparser.ParseOptions) (*SQLAnalysis, error) {
+	pq, err := postgresparser.ParseSQLStrictWithOptions(sql, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse SQL: %w", err)
 	}
@@ -405,11 +423,14 @@ func convertDDLActions(actions []postgresparser.DDLAction) []SQLDDLAction {
 		out = append(out, SQLDDLAction{
 			Type:          string(a.Type),
 			ObjectName:    a.ObjectName,
+			ObjectType:    a.ObjectType,
 			Schema:        a.Schema,
 			Columns:       append([]string(nil), a.Columns...),
 			ColumnDetails: convertDDLColumns(a.ColumnDetails),
 			Flags:         append([]string(nil), a.Flags...),
 			IndexType:     a.IndexType,
+			Target:        a.Target,
+			Comment:       a.Comment,
 		})
 	}
 	return out
@@ -427,6 +448,7 @@ func convertDDLColumns(cols []postgresparser.DDLColumn) []SQLDDLColumn {
 			Type:     c.Type,
 			Nullable: c.Nullable,
 			Default:  c.Default,
+			Comment:  append([]string(nil), c.Comment...),
 		})
 	}
 	return out

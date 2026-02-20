@@ -330,3 +330,207 @@ func TestAnalyzeSQLStrictTable(t *testing.T) {
 		})
 	}
 }
+
+func TestAnalyzeSQLWithOptions_Table(t *testing.T) {
+	tests := []struct {
+		name         string
+		sql          string
+		opts         postgresparser.ParseOptions
+		wantComments []string
+		wantDDLType  string
+		wantComment  string
+	}{
+		{
+			name: "field comments enabled",
+			sql: `CREATE TABLE public.users (
+    -- comment line
+    name text
+);`,
+			opts:         postgresparser.ParseOptions{IncludeCreateTableFieldComments: true},
+			wantComments: []string{"comment line"},
+			wantDDLType:  "CREATE_TABLE",
+		},
+		{
+			name: "field comments disabled by default",
+			sql: `CREATE TABLE public.users (
+    -- comment line
+    name text
+);`,
+			opts:         postgresparser.ParseOptions{},
+			wantComments: []string{},
+			wantDDLType:  "CREATE_TABLE",
+		},
+		{
+			name:        "comment on index always on",
+			sql:         `COMMENT ON INDEX public.idx_bookings_dates IS 'Composite index for efficient date range queries on bookings';`,
+			opts:        postgresparser.ParseOptions{},
+			wantDDLType: "COMMENT",
+			wantComment: "Composite index for efficient date range queries on bookings",
+		},
+		{
+			name:        "comment on table always on with flag enabled",
+			sql:         `COMMENT ON TABLE public.users IS 'Stores user account information';`,
+			opts:        postgresparser.ParseOptions{IncludeCreateTableFieldComments: true},
+			wantDDLType: "COMMENT",
+			wantComment: "Stores user account information",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := AnalyzeSQLWithOptions(tc.sql, tc.opts)
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			require.Len(t, res.DDLActions, 1)
+			act := res.DDLActions[0]
+			assert.Equal(t, tc.wantDDLType, act.Type)
+			if tc.wantDDLType == "CREATE_TABLE" {
+				require.Len(t, act.ColumnDetails, 1)
+				if len(tc.wantComments) == 0 {
+					assert.Empty(t, act.ColumnDetails[0].Comment)
+				} else {
+					assert.Equal(t, tc.wantComments, act.ColumnDetails[0].Comment)
+				}
+			}
+			if tc.wantDDLType == "COMMENT" {
+				assert.Equal(t, tc.wantComment, act.Comment)
+			}
+		})
+	}
+}
+
+func TestAnalyzeSQLAllWithOptions_Table(t *testing.T) {
+	tests := []struct {
+		name        string
+		sql         string
+		opts        postgresparser.ParseOptions
+		assertBatch func(t *testing.T, batch *SQLAnalysisBatchResult)
+	}{
+		{
+			name: "field comments enabled for all statements",
+			sql: `CREATE TABLE users (
+    -- first
+    name text
+);
+CREATE TABLE users2 (
+    -- second
+    email text
+);`,
+			opts: postgresparser.ParseOptions{IncludeCreateTableFieldComments: true},
+			assertBatch: func(t *testing.T, batch *SQLAnalysisBatchResult) {
+				t.Helper()
+				require.Len(t, batch.Statements, 2)
+				require.NotNil(t, batch.Statements[0].Query)
+				require.NotNil(t, batch.Statements[1].Query)
+				assert.Equal(t, []string{"first"}, batch.Statements[0].Query.DDLActions[0].ColumnDetails[0].Comment)
+				assert.Equal(t, []string{"second"}, batch.Statements[1].Query.DDLActions[0].ColumnDetails[0].Comment)
+			},
+		},
+		{
+			name: "field comments disabled by default for all statements",
+			sql: `CREATE TABLE users (
+    -- first
+    name text
+);
+CREATE TABLE users2 (
+    -- second
+    email text
+);`,
+			opts: postgresparser.ParseOptions{},
+			assertBatch: func(t *testing.T, batch *SQLAnalysisBatchResult) {
+				t.Helper()
+				require.Len(t, batch.Statements, 2)
+				require.NotNil(t, batch.Statements[0].Query)
+				require.NotNil(t, batch.Statements[1].Query)
+				assert.Empty(t, batch.Statements[0].Query.DDLActions[0].ColumnDetails[0].Comment)
+				assert.Empty(t, batch.Statements[1].Query.DDLActions[0].ColumnDetails[0].Comment)
+			},
+		},
+		{
+			name: "comment statements always on in batch",
+			sql: `COMMENT ON TABLE public.users IS 'Stores user account information';
+COMMENT ON COLUMN public.users.email IS 'User email address, must be unique';`,
+			opts: postgresparser.ParseOptions{},
+			assertBatch: func(t *testing.T, batch *SQLAnalysisBatchResult) {
+				t.Helper()
+				require.Len(t, batch.Statements, 2)
+				require.NotNil(t, batch.Statements[0].Query)
+				require.NotNil(t, batch.Statements[1].Query)
+				assert.Equal(t, "COMMENT", batch.Statements[0].Query.DDLActions[0].Type)
+				assert.Equal(t, "COMMENT", batch.Statements[1].Query.DDLActions[0].Type)
+				assert.Equal(t, "Stores user account information", batch.Statements[0].Query.DDLActions[0].Comment)
+				assert.Equal(t, "User email address, must be unique", batch.Statements[1].Query.DDLActions[0].Comment)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			batch, err := AnalyzeSQLAllWithOptions(tc.sql, tc.opts)
+			require.NoError(t, err)
+			require.NotNil(t, batch)
+			if tc.assertBatch != nil {
+				tc.assertBatch(t, batch)
+			}
+		})
+	}
+}
+
+func TestAnalyzeSQLStrictWithOptions_Table(t *testing.T) {
+	tests := []struct {
+		name        string
+		sql         string
+		opts        postgresparser.ParseOptions
+		wantErrIs   error
+		assertQuery func(t *testing.T, q *SQLAnalysis)
+	}{
+		{
+			name: "strict field comments enabled",
+			sql: `CREATE TABLE users (
+    -- strict analysis
+    name text
+);`,
+			opts: postgresparser.ParseOptions{IncludeCreateTableFieldComments: true},
+			assertQuery: func(t *testing.T, q *SQLAnalysis) {
+				t.Helper()
+				require.Len(t, q.DDLActions, 1)
+				require.Len(t, q.DDLActions[0].ColumnDetails, 1)
+				assert.Equal(t, []string{"strict analysis"}, q.DDLActions[0].ColumnDetails[0].Comment)
+			},
+		},
+		{
+			name: "strict comment always on",
+			sql:  `COMMENT ON INDEX public.idx_bookings_dates IS 'Composite index for efficient date range queries on bookings';`,
+			opts: postgresparser.ParseOptions{},
+			assertQuery: func(t *testing.T, q *SQLAnalysis) {
+				t.Helper()
+				require.Len(t, q.DDLActions, 1)
+				assert.Equal(t, "COMMENT", q.DDLActions[0].Type)
+				assert.Equal(t, "Composite index for efficient date range queries on bookings", q.DDLActions[0].Comment)
+			},
+		},
+		{
+			name:      "strict rejects multi statement",
+			sql:       "SELECT 1; SELECT 2;",
+			opts:      postgresparser.ParseOptions{IncludeCreateTableFieldComments: true},
+			wantErrIs: postgresparser.ErrMultipleStatements,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := AnalyzeSQLStrictWithOptions(tc.sql, tc.opts)
+			if tc.wantErrIs != nil {
+				require.Error(t, err)
+				assert.Nil(t, res)
+				assert.ErrorIs(t, err, tc.wantErrIs)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			if tc.assertQuery != nil {
+				tc.assertQuery(t, res)
+			}
+		})
+	}
+}

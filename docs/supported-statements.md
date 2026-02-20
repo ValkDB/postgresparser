@@ -25,6 +25,7 @@ These statements are walked via ANTLR visitors and produce rich IR metadata in `
 | `DROP TABLE` / `DROP INDEX` | `DDL` | `DDLActions` (with `Flags`) |
 | `CREATE INDEX` | `DDL` | `DDLActions` (with `IndexType`) |
 | `TRUNCATE` | `DDL` | `Tables`, `DDLActions` |
+| `COMMENT ON` | `DDL` | `DDLActions` (with `Type=COMMENT`, `ObjectType`, `ObjectName`, `Schema`, `Target`, `Comment`) |
 
 ## Gracefully Handled (UNKNOWN) Statements
 
@@ -60,8 +61,23 @@ Examples of statements that currently return errors or UNKNOWN without structure
 - `VACUUM` / `ANALYZE`
 - `BEGIN` / `COMMIT` / `ROLLBACK`
 - `LISTEN` / `NOTIFY`
-- `COMMENT ON`
 - `DO` (anonymous PL/pgSQL blocks)
+
+## Parse Options
+
+The parser exposes options-enabled entry points:
+
+- `ParseSQLWithOptions(sql, opts)`
+- `ParseSQLAllWithOptions(sql, opts)`
+- `ParseSQLStrictWithOptions(sql, opts)`
+
+Supported options:
+
+- `IncludeCreateTableFieldComments`:
+  - `false` (default): ignores inline `--` comments in `CREATE TABLE`.
+  - `true`: captures consecutive inline `--` lines immediately above each column into `DDLActions[].ColumnDetails[].Comment`.
+
+`COMMENT ON ...` extraction is always enabled and does not depend on options.
 
 ## Adding Support for New Statements
 

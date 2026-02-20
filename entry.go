@@ -15,11 +15,17 @@ import (
 // RawSQL in the returned ParsedQuery preserves the full preprocessed input.
 // Use ParseSQLAll to parse all statements, or ParseSQLStrict to enforce exactly one.
 func ParseSQL(sql string) (*ParsedQuery, error) {
+	return ParseSQLWithOptions(sql, ParseOptions{})
+}
+
+// ParseSQLWithOptions parses only the first SQL statement in the input string
+// and enables optional metadata extraction flags.
+func ParseSQLWithOptions(sql string, opts ParseOptions) (*ParsedQuery, error) {
 	state, err := prepareParseState(sql, false)
 	if err != nil {
 		return nil, err
 	}
-	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL)
+	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL, opts)
 }
 
 // ParseSQLAll parses all SQL statements in the input string and returns a
@@ -27,6 +33,12 @@ func ParseSQL(sql string) (*ParsedQuery, error) {
 // Individual statement failures do not abort the batch; check
 // StatementParseResult.Query (nil on failure) and Warnings for details.
 func ParseSQLAll(sql string) (*ParseBatchResult, error) {
+	return ParseSQLAllWithOptions(sql, ParseOptions{})
+}
+
+// ParseSQLAllWithOptions parses all SQL statements and enables optional
+// metadata extraction flags.
+func ParseSQLAllWithOptions(sql string, opts ParseOptions) (*ParseBatchResult, error) {
 	state, err := prepareParseState(sql, true)
 	if err != nil {
 		return nil, err
@@ -42,7 +54,7 @@ func ParseSQLAll(sql string) (*ParseBatchResult, error) {
 		if stmtSQL == "" {
 			continue
 		}
-		query, parseErr := parseStatementToIR(stmt, state.stream, stmtSQL)
+		query, parseErr := parseStatementToIR(stmt, state.stream, stmtSQL, opts)
 		if parseErr != nil {
 			continue
 		}
@@ -82,6 +94,12 @@ func ParseSQLAll(sql string) (*ParseBatchResult, error) {
 // ParseSQLStrict parses input only when it contains exactly one SQL statement.
 // It returns ErrMultipleStatements when more than one statement is present.
 func ParseSQLStrict(sql string) (*ParsedQuery, error) {
+	return ParseSQLStrictWithOptions(sql, ParseOptions{})
+}
+
+// ParseSQLStrictWithOptions parses input only when it contains exactly one SQL
+// statement and enables optional metadata extraction flags.
+func ParseSQLStrictWithOptions(sql string, opts ParseOptions) (*ParsedQuery, error) {
 	state, err := prepareParseState(sql, false)
 	if err != nil {
 		return nil, err
@@ -89,7 +107,7 @@ func ParseSQLStrict(sql string) (*ParsedQuery, error) {
 	if len(state.stmts) > 1 {
 		return nil, &MultipleStatementsError{StatementCount: len(state.stmts)}
 	}
-	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL)
+	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL, opts)
 }
 
 // parseState holds the shared ANTLR parse artifacts produced by prepareParseState
@@ -155,7 +173,7 @@ func prepareParseState(sql string, tolerateSyntaxErrors bool) (*parseState, erro
 }
 
 // parseStatementToIR maps a single parsed statement node to ParsedQuery IR.
-func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL string) (*ParsedQuery, error) {
+func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL string, opts ParseOptions) (*ParsedQuery, error) {
 	res := &ParsedQuery{
 		Command:        QueryCommandUnknown,
 		RawSQL:         strings.TrimSpace(rawSQL),
@@ -190,7 +208,7 @@ func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL 
 		}
 	case stmt.Createstmt() != nil:
 		res.Command = QueryCommandDDL
-		if err := populateCreateTable(res, stmt.Createstmt(), stream); err != nil {
+		if err := populateCreateTable(res, stmt.Createstmt(), stream, opts); err != nil {
 			return nil, err
 		}
 	case stmt.Dropstmt() != nil:
@@ -211,6 +229,11 @@ func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL 
 	case stmt.Truncatestmt() != nil:
 		res.Command = QueryCommandDDL
 		if err := populateTruncate(res, stmt.Truncatestmt(), stream); err != nil {
+			return nil, err
+		}
+	case stmt.Commentstmt() != nil:
+		res.Command = QueryCommandDDL
+		if err := populateCommentStmt(res, stmt.Commentstmt(), stream); err != nil {
 			return nil, err
 		}
 	default:

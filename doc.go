@@ -22,6 +22,11 @@
 // per-statement status/warnings, or ParseSQLStrict to fail unless exactly one
 // statement is present.
 //
+// Options-enabled variants are also available:
+//   - ParseSQLWithOptions
+//   - ParseSQLAllWithOptions
+//   - ParseSQLStrictWithOptions
+//
 // # Analysis Subpackage
 //
 // The analysis subpackage provides higher-level SQL analysis on top of the
@@ -49,6 +54,7 @@
 //   - DELETE with USING clause, RETURNING
 //   - MERGE with MATCHED/NOT MATCHED actions
 //   - CREATE TABLE with column metadata (name, type, nullability, default)
+//   - COMMENT ON statements (TABLE/COLUMN/INDEX targets)
 //   - CREATE/DROP INDEX, DROP TABLE, ALTER TABLE, TRUNCATE
 //   - Common Table Expressions (WITH ... AS)
 //   - Subqueries in SELECT, FROM, WHERE, and HAVING

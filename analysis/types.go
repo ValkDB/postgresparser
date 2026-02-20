@@ -178,17 +178,21 @@ type SQLDDLColumn struct {
 	Type     string
 	Nullable bool
 	Default  string
+	Comment  []string
 }
 
 // SQLDDLAction describes a single DDL operation in the analysis result.
 type SQLDDLAction struct {
 	Type          string
 	ObjectName    string
+	ObjectType    string
 	Schema        string
 	Columns       []string
 	ColumnDetails []SQLDDLColumn
 	Flags         []string
 	IndexType     string
+	Target        string
+	Comment       string
 }
 
 // SQLParseWarningCode identifies non-fatal parser notices in analysis batch results.
