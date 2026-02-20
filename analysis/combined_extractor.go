@@ -59,6 +59,7 @@ func ExtractQueryAnalysis(query string) (*QueryAnalysisResult, error) {
 // This is the internal implementation shared by both ExtractWhereConditions and ExtractQueryAnalysis.
 func extractWhereConditionsFromParsed(pq *postgresparser.ParsedQuery) []WhereCondition {
 	var conditions []WhereCondition
+	aliasMap := buildAliasMap(pq.Tables)
 
 	// Extract conditions from ColumnUsage with filter type
 	for _, usage := range pq.ColumnUsage {
@@ -77,8 +78,8 @@ func extractWhereConditionsFromParsed(pq *postgresparser.ParsedQuery) []WhereCon
 			continue
 		}
 
-		// Resolve table name from alias, or use first table only for single-table queries
-		tableName := resolveTableName(usage.TableAlias, pq.Tables)
+		// Resolve table name from alias, or use first table only for single-table queries.
+		tableName := resolveTableName(usage.TableAlias, aliasMap)
 		if tableName == "" && len(pq.Tables) == 1 {
 			// No alias and no resolution - default to first table only for single-table queries
 			tableName = pq.Tables[0].Name

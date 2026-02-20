@@ -29,31 +29,12 @@ var equalityPattern = regexp.MustCompile(`(?i)([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-
 // Returns JoinRelationship structs with accurate parent/child based on PK detection.
 // If schemaMap is nil or missing entries, relationships that cannot be determined are skipped.
 func ExtractJoinRelationshipsWithSchema(query string, schemaMap map[string][]ColumnSchema) ([]JoinRelationship, error) {
-	// Parse the query
 	pq, err := postgresparser.ParseSQL(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse query: %w", err)
 	}
 
-	var relationships []JoinRelationship
-
-	// Build alias -> table name map
-	aliasMap := buildAliasMap(pq.Tables)
-
-	// Extract relationships from JoinConditions using schema metadata
-	for _, joinCond := range pq.JoinConditions {
-		rels := extractRelationshipsFromConditionWithSchema(joinCond, aliasMap, schemaMap)
-		relationships = append(relationships, rels...)
-	}
-
-	// Also extract from ColumnUsage using schema metadata
-	rels := extractRelationshipsFromColumnUsageWithSchema(pq.ColumnUsage, aliasMap, schemaMap)
-	relationships = append(relationships, rels...)
-
-	// Deduplicate relationships
-	relationships = deduplicateRelationships(relationships)
-
-	return relationships, nil
+	return extractJoinRelationshipsWithSchema(pq, schemaMap), nil
 }
 
 // buildAliasMap creates a map from table alias/name to actual table name.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valkdb/postgresparser"
 )
 
 // =============================================================================
@@ -1021,6 +1022,20 @@ func TestResolveTableName(t *testing.T) {
 			assert.Equal(t, tt.expectedTable, conditions[0].Table)
 		})
 	}
+}
+
+// TestResolveTableName_AliasMap verifies alias-map based resolution behavior.
+func TestResolveTableName_AliasMap(t *testing.T) {
+	tables := []postgresparser.TableRef{
+		{Name: "orders", Alias: "o", Type: postgresparser.TableTypeBase},
+		{Name: "ranked_orders", Alias: "ro", Type: postgresparser.TableTypeCTE},
+	}
+	aliasMap := buildAliasMap(tables)
+
+	assert.Equal(t, "orders", resolveTableName("O", aliasMap), "should resolve aliases case-insensitively")
+	assert.Equal(t, "orders", resolveTableName("orders", aliasMap), "should resolve direct base table names")
+	assert.Equal(t, "ro", resolveTableName("ro", aliasMap), "non-base aliases should fall back to input alias")
+	assert.Equal(t, "", resolveTableName("", aliasMap), "empty alias should return empty table name")
 }
 
 // TestExtractInValues validates parsing of IN value lists with integers, strings, and edge cases.

@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/valkdb/postgresparser/internal/ident"
 )
 
 // BaseTables returns unique base relations referenced by the query.
@@ -20,12 +22,12 @@ func BaseTables(a *SQLAnalysis) []SQLTable {
 		if tbl.Type != SQLTableTypeBase {
 			continue
 		}
-		schema := trimQuotes(tbl.Schema)
+		schema := ident.TrimQuotes(tbl.Schema)
 		if schema == "" {
 			schema = "public"
 		}
-		name := trimQuotes(tbl.Name)
-		alias := trimQuotes(tbl.Alias)
+		name := ident.TrimQuotes(tbl.Name)
+		alias := ident.TrimQuotes(tbl.Alias)
 		key := strings.ToLower(schema) + "." + strings.ToLower(name) + "|" + strings.ToLower(alias)
 		if _, ok := seen[key]; ok {
 			continue
@@ -159,10 +161,6 @@ func matchesAlias(candidate, target string, single bool) bool {
 		return candidate == "" && single
 	}
 	return single && candidate == ""
-}
-
-func trimQuotes(s string) string {
-	return strings.Trim(s, `"`)
 }
 
 // EntityNameFromTables creates an entity name string from base tables.

@@ -83,19 +83,11 @@ func extractJSONBInfo(context string) *jsonbInfo {
 
 // resolveTableName converts a table alias to the actual table name.
 // If no alias is found, returns the alias itself (it might be the actual table name).
-func resolveTableName(alias string, tables []postgresparser.TableRef) string {
+func resolveTableName(alias string, aliasMap map[string]string) string {
 	if alias == "" {
 		return ""
 	}
-
-	for _, table := range tables {
-		if table.Alias == alias {
-			return table.Name
-		}
-	}
-
-	// If no alias match, assume it's the actual table name
-	return alias
+	return resolveAlias(alias, aliasMap)
 }
 
 // normalizeOperator standardizes operator representation.
