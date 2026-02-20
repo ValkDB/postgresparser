@@ -126,7 +126,7 @@ CREATE TABLE public.users (
 
 ### Performance Note
 
-`IncludeCreateTableFieldComments` is opt-in because it performs extra SQL text scanning for `CREATE TABLE`.
+`IncludeCreateTableFieldComments` is opt-in because it performs extra hidden-token processing for `CREATE TABLE` column definitions.
 
 In local benchmarks (`benchmark/bench_test.go`, `-benchmem`):
 - non-DDL queries (`SELECT`) showed no meaningful allocation overhead

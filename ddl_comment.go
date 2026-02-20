@@ -3,7 +3,6 @@ package postgresparser
 import (
 	"fmt"
 	"strings"
-	"unicode"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -93,6 +92,7 @@ func populateCommentStmt(result *ParsedQuery, ctx gen.ICommentstmtContext, token
 	return nil
 }
 
+// decodeCommentText normalizes COMMENT ON text, treating NULL as empty text.
 func decodeCommentText(commentCtx gen.IComment_textContext, tokens antlr.TokenStream) string {
 	if commentCtx == nil {
 		return ""
@@ -104,6 +104,8 @@ func decodeCommentText(commentCtx gen.IComment_textContext, tokens antlr.TokenSt
 	return decodeCommentStringLiteral(raw)
 }
 
+// decodeCommentStringLiteral decodes PostgreSQL string literal forms used by
+// COMMENT ON (single-quoted, E”, U&”, and dollar-quoted forms).
 func decodeCommentStringLiteral(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -137,6 +139,8 @@ func decodeCommentStringLiteral(raw string) string {
 	return trimmed
 }
 
+// decodeSingleQuoted unquotes a single-quoted SQL string and unescapes doubled
+// single quotes.
 func decodeSingleQuoted(raw string) (string, bool) {
 	if len(raw) < 2 || raw[0] != '\'' || raw[len(raw)-1] != '\'' {
 		return "", false
@@ -157,10 +161,12 @@ var escapedStringReplacer = strings.NewReplacer(
 	`\f`, "\f",
 )
 
+// decodeEscapedString applies C-style escape decoding for E'...' literals.
 func decodeEscapedString(raw string) string {
 	return escapedStringReplacer.Replace(raw)
 }
 
+// decodeDollarQuotedString decodes PostgreSQL dollar-quoted strings.
 func decodeDollarQuotedString(raw string) (string, bool) {
 	if raw == "" || raw[0] != '$' {
 		return "", false
@@ -177,6 +183,8 @@ func decodeDollarQuotedString(raw string) (string, bool) {
 	return raw[len(delim) : len(raw)-len(delim)], true
 }
 
+// splitQualifiedColumnName splits a column target into schema, table, and
+// column using quote-aware dot splitting.
 func splitQualifiedColumnName(name string) (schema, table, column string) {
 	parts := splitQuotedDot(strings.TrimSpace(name))
 	if len(parts) == 0 {
@@ -194,63 +202,44 @@ func splitQualifiedColumnName(name string) (schema, table, column string) {
 	return schema, table, column
 }
 
+// contextText returns trimmed text for the provided ANTLR rule context.
 func contextText(tokens antlr.TokenStream, ctx antlr.RuleContext) string {
 	return strings.TrimSpace(ctxText(tokens, ctx))
 }
 
-type createTableElementComments struct {
-	element  string
-	comments []string
-}
-
-type createTableElementSplitter struct {
-	runes []rune
-
-	elements        []createTableElementComments
-	current         strings.Builder
-	pendingComments []string
-	depth           int
-	inSingle        bool
-	inDouble        bool
-	inDollar        bool
-	dollarTag       string
-	inBlockComment  bool
-	hasContent      bool
-}
-
 // extractCreateTableFieldCommentsByColumn maps CREATE TABLE column names to
-// line comments (`-- ...`) that immediately precede each column definition.
-func extractCreateTableFieldCommentsByColumn(createStmtSQL string) map[string][]string {
-	body := extractCreateTableBody(createStmtSQL)
-	if body == "" {
+// line comments (`-- ...`) captured from hidden-channel tokens immediately to
+// the left of each column definition start token.
+func extractCreateTableFieldCommentsByColumn(tableElems []gen.ITableelementContext, tokens antlr.TokenStream) map[string][]string {
+	if len(tableElems) == 0 || tokens == nil {
+		return nil
+	}
+	tokenStream, ok := tokens.(*antlr.CommonTokenStream)
+	if !ok {
 		return nil
 	}
 
-	elements := splitCreateTableElementsWithComments(body)
-	if len(elements) == 0 {
-		return nil
-	}
-
-	commentsByColumn := make(map[string][]string)
-	for _, elem := range elements {
-		if len(elem.comments) == 0 {
+	commentsByColumn := make(map[string][]string, len(tableElems))
+	for _, tableElem := range tableElems {
+		if tableElem == nil || tableElem.ColumnDef() == nil {
 			continue
 		}
-		colName := extractCreateTableColumnNameFromElement(elem.element)
-		if colName == "" {
+		colDef := tableElem.ColumnDef()
+		colid := colDef.Colid()
+		if colid == nil {
 			continue
 		}
+		colName := strings.TrimSpace(colid.GetText())
 		normalizedCol := normalizeCreateTableColumnName(colName)
 		if normalizedCol == "" {
 			continue
 		}
-		lines := make([]string, 0, len(elem.comments))
-		for _, line := range elem.comments {
-			trimmed := strings.TrimSpace(line)
-			if trimmed != "" {
-				lines = append(lines, trimmed)
-			}
+		start := colDef.GetStart()
+		if start == nil {
+			continue
 		}
+		hidden := tokenStream.GetHiddenTokensToLeft(start.GetTokenIndex(), antlr.TokenHiddenChannel)
+		lines := extractLineCommentsFromHiddenTokens(hidden)
 		if len(lines) > 0 {
 			commentsByColumn[normalizedCol] = lines
 		}
@@ -262,316 +251,24 @@ func extractCreateTableFieldCommentsByColumn(createStmtSQL string) map[string][]
 	return commentsByColumn
 }
 
-// extractCreateTableBody returns the SQL text inside the first top-level
-// parentheses pair of the CREATE TABLE statement.
-func extractCreateTableBody(sql string) string {
-	runes := []rune(sql)
-	if len(runes) == 0 {
-		return ""
-	}
-
-	openIdx := -1
-	depth := 0
-	inSingle := false
-	inDouble := false
-	inDollar := false
-	dollarTag := ""
-	inLineComment := false
-	inBlockComment := false
-
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-
-		if inLineComment {
-			if r == '\n' || r == '\r' {
-				inLineComment = false
-			}
-			continue
-		}
-		if inBlockComment {
-			if r == '*' && i+1 < len(runes) && runes[i+1] == '/' {
-				inBlockComment = false
-				i++
-			}
-			continue
-		}
-		if inDollar {
-			if r == '$' && hasDollarTerminator(runes, i, dollarTag) {
-				i += len([]rune(dollarTag)) + 1
-				inDollar = false
-				dollarTag = ""
-			}
-			continue
-		}
-		if inSingle {
-			if r == '\'' {
-				if i+1 < len(runes) && runes[i+1] == '\'' {
-					i++
-				} else {
-					inSingle = false
-				}
-			}
-			continue
-		}
-		if inDouble {
-			if r == '"' {
-				if i+1 < len(runes) && runes[i+1] == '"' {
-					i++
-				} else {
-					inDouble = false
-				}
-			}
-			continue
-		}
-
-		if r == '-' && i+1 < len(runes) && runes[i+1] == '-' {
-			inLineComment = true
-			i++
-			continue
-		}
-		if r == '/' && i+1 < len(runes) && runes[i+1] == '*' {
-			inBlockComment = true
-			i++
-			continue
-		}
-		if r == '\'' {
-			inSingle = true
-			continue
-		}
-		if r == '"' {
-			inDouble = true
-			continue
-		}
-		if r == '$' {
-			if tag, ok := parseDollarTag(runes, i); ok {
-				inDollar = true
-				dollarTag = tag
-				i += len([]rune(tag)) + 1
-				continue
-			}
-		}
-
-		switch r {
-		case '(':
-			if openIdx < 0 {
-				openIdx = i
-				depth = 1
-				continue
-			}
-			if depth > 0 {
-				depth++
-			}
-		case ')':
-			if depth > 0 {
-				depth--
-				if depth == 0 && openIdx >= 0 {
-					return string(runes[openIdx+1 : i])
-				}
-			}
-		}
-	}
-
-	return ""
-}
-
-// splitCreateTableElementsWithComments splits CREATE TABLE body elements by
-// top-level commas while keeping preceding line comments for each element.
-func splitCreateTableElementsWithComments(body string) []createTableElementComments {
-	splitter := createTableElementSplitter{
-		runes: []rune(body),
-	}
-	if len(splitter.runes) == 0 {
+// extractLineCommentsFromHiddenTokens keeps only -- line comments from hidden
+// tokens and returns normalized comment text without the comment marker.
+func extractLineCommentsFromHiddenTokens(hidden []antlr.Token) []string {
+	if len(hidden) == 0 {
 		return nil
 	}
-
-	for i := 0; i < len(splitter.runes); i++ {
-		r := splitter.runes[i]
-
-		if splitter.inBlockComment {
-			if r == '*' && i+1 < len(splitter.runes) && splitter.runes[i+1] == '/' {
-				splitter.inBlockComment = false
-				i++
-			}
+	lines := make([]string, 0, len(hidden))
+	for _, tok := range hidden {
+		if tok == nil || tok.GetTokenType() != gen.PostgreSQLLexerLineComment {
 			continue
 		}
-		if splitter.inDollar {
-			splitter.current.WriteRune(r)
-			if r == '$' && hasDollarTerminator(splitter.runes, i, splitter.dollarTag) {
-				tagLen := len([]rune(splitter.dollarTag))
-				for j := 1; j < tagLen+2 && i+j < len(splitter.runes); j++ {
-					splitter.current.WriteRune(splitter.runes[i+j])
-				}
-				i += tagLen + 1
-				splitter.inDollar = false
-				splitter.dollarTag = ""
-			}
-			continue
-		}
-		if splitter.inSingle {
-			splitter.current.WriteRune(r)
-			if r == '\'' {
-				if i+1 < len(splitter.runes) && splitter.runes[i+1] == '\'' {
-					i++
-					splitter.current.WriteRune(splitter.runes[i])
-				} else {
-					splitter.inSingle = false
-				}
-			}
-			continue
-		}
-		if splitter.inDouble {
-			splitter.current.WriteRune(r)
-			if r == '"' {
-				if i+1 < len(splitter.runes) && splitter.runes[i+1] == '"' {
-					i++
-					splitter.current.WriteRune(splitter.runes[i])
-				} else {
-					splitter.inDouble = false
-				}
-			}
-			continue
-		}
-
-		if r == '-' && i+1 < len(splitter.runes) && splitter.runes[i+1] == '-' {
-			commentStart := i + 2
-			commentEnd := commentStart
-			for commentEnd < len(splitter.runes) && splitter.runes[commentEnd] != '\n' && splitter.runes[commentEnd] != '\r' {
-				commentEnd++
-			}
-			if !splitter.hasContent {
-				commentLine := strings.TrimSpace(string(splitter.runes[commentStart:commentEnd]))
-				if commentLine != "" {
-					splitter.pendingComments = append(splitter.pendingComments, commentLine)
-				}
-			}
-			i = commentEnd - 1
-			continue
-		}
-		if r == '/' && i+1 < len(splitter.runes) && splitter.runes[i+1] == '*' {
-			splitter.inBlockComment = true
-			i++
-			continue
-		}
-		if r == '\'' {
-			splitter.inSingle = true
-			splitter.current.WriteRune(r)
-			splitter.hasContent = true
-			continue
-		}
-		if r == '"' {
-			splitter.inDouble = true
-			splitter.current.WriteRune(r)
-			splitter.hasContent = true
-			continue
-		}
-		if r == '$' {
-			if tag, ok := parseDollarTag(splitter.runes, i); ok {
-				splitter.inDollar = true
-				splitter.dollarTag = tag
-				terminatorLen := len([]rune(tag)) + 2
-				for j := 0; j < terminatorLen && i+j < len(splitter.runes); j++ {
-					splitter.current.WriteRune(splitter.runes[i+j])
-				}
-				i += terminatorLen - 1
-				splitter.hasContent = true
-				continue
-			}
-		}
-
-		if r == ',' && splitter.depth == 0 {
-			splitter.flushCurrent()
-			continue
-		}
-		if r == '(' {
-			splitter.depth++
-		} else if r == ')' && splitter.depth > 0 {
-			splitter.depth--
-		}
-
-		splitter.current.WriteRune(r)
-		if !unicode.IsSpace(r) {
-			splitter.hasContent = true
+		line := strings.TrimSpace(strings.TrimPrefix(tok.GetText(), "--"))
+		if line != "" {
+			lines = append(lines, line)
 		}
 	}
-
-	splitter.flushCurrent()
-	if len(splitter.elements) == 0 {
+	if len(lines) == 0 {
 		return nil
 	}
-	return splitter.elements
-}
-
-func (s *createTableElementSplitter) flushCurrent() {
-	elem := strings.TrimSpace(s.current.String())
-	if elem == "" {
-		s.current.Reset()
-		s.pendingComments = nil
-		s.hasContent = false
-		return
-	}
-	item := createTableElementComments{
-		element: elem,
-	}
-	if len(s.pendingComments) > 0 {
-		item.comments = append([]string(nil), s.pendingComments...)
-	}
-	s.elements = append(s.elements, item)
-	s.current.Reset()
-	s.pendingComments = nil
-	s.hasContent = false
-}
-
-func extractCreateTableColumnNameFromElement(element string) string {
-	trimmed := strings.TrimSpace(element)
-	if trimmed == "" {
-		return ""
-	}
-	token := readLeadingIdentifierToken(trimmed)
-	if token == "" {
-		return ""
-	}
-	if isCreateTableConstraintToken(token) {
-		return ""
-	}
-	return token
-}
-
-func readLeadingIdentifierToken(s string) string {
-	runes := []rune(strings.TrimSpace(s))
-	if len(runes) == 0 {
-		return ""
-	}
-
-	if runes[0] == '"' {
-		for i := 1; i < len(runes); i++ {
-			if runes[i] != '"' {
-				continue
-			}
-			if i+1 < len(runes) && runes[i+1] == '"' {
-				i++
-				continue
-			}
-			return string(runes[:i+1])
-		}
-		return ""
-	}
-
-	for i, r := range runes {
-		if unicode.IsSpace(r) || r == ',' || r == '(' || r == ')' {
-			if i == 0 {
-				return ""
-			}
-			return string(runes[:i])
-		}
-	}
-	return string(runes)
-}
-
-func isCreateTableConstraintToken(token string) bool {
-	switch strings.ToUpper(trimIdentQuotes(strings.TrimSpace(token))) {
-	case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE", "LIKE":
-		return true
-	default:
-		return false
-	}
+	return lines
 }

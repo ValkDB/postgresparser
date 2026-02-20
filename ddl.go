@@ -49,18 +49,15 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 		Flags:      flags,
 	}
 
-	var fieldCommentsByColumn map[string][]string
-	if opts.IncludeCreateTableFieldComments {
-		if prc, ok := ctx.(antlr.RuleContext); ok {
-			fieldCommentsByColumn = extractCreateTableFieldCommentsByColumn(ctxText(tokens, prc))
-		}
-	}
-
 	if optElems := ctx.Opttableelementlist(); optElems != nil && optElems.Tableelementlist() != nil {
 		tableElems := optElems.Tableelementlist().AllTableelement()
 		action.Columns = make([]string, 0, len(tableElems))
 		action.ColumnDetails = make([]DDLColumn, 0, len(tableElems))
 		primaryKeyCols := collectCreateTablePrimaryKeyColumns(tableElems)
+		var fieldCommentsByColumn map[string][]string
+		if opts.IncludeCreateTableFieldComments {
+			fieldCommentsByColumn = extractCreateTableFieldCommentsByColumn(tableElems, tokens)
+		}
 		for _, tableElem := range tableElems {
 			if tableElem == nil || tableElem.ColumnDef() == nil {
 				continue
