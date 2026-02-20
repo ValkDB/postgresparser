@@ -115,6 +115,42 @@ WHERE inventory.product_id = oi.product_id
 FROM employees
 WHERE hire_date >= '2020-01-01'`,
 	},
+	{
+		Name: "DDL_CommentOn",
+		SQL:  `COMMENT ON TABLE public.users IS 'User accounts table'`,
+	},
+}
+
+// optionBenchQueries focuses on workloads where ParseOptions can affect
+// behavior and cost.
+var optionBenchQueries = []struct {
+	Name string
+	SQL  string
+}{
+	{
+		Name: "SimpleSelect",
+		SQL:  `SELECT id, name, email FROM users WHERE active = true`,
+	},
+	{
+		Name: "DDL_CreateTable_NoFieldComments",
+		SQL: `CREATE TABLE public.users (
+    id integer NOT NULL,
+    email text NOT NULL,
+    name text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+)`,
+	},
+	{
+		Name: "DDL_CreateTable_FieldComments_Issue25",
+		SQL: `CREATE TABLE public.users (
+    -- [Attribute("Just an example")]
+    -- required, min 5, max 55
+    name        text,
+
+    -- single-column FK, inline
+    org_id      integer     REFERENCES public.organizations(id)
+)`,
+	},
 }
 
 // BenchmarkPostgresParser benchmarks the full ParseSQL pipeline (LL mode, default).
@@ -242,6 +278,40 @@ func BenchmarkANTLRParseOnly_SLLFallback(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				parseSLLWithFallback(q.SQL)
+			}
+		})
+	}
+}
+
+// BenchmarkPostgresParserWithOptions_Default benchmarks ParseSQLWithOptions
+// with zero-value ParseOptions.
+func BenchmarkPostgresParserWithOptions_Default(b *testing.B) {
+	benchmarkPostgresParserWithOptions(b, postgresparser.ParseOptions{})
+}
+
+// BenchmarkPostgresParserWithOptions_FieldCommentsEnabled benchmarks
+// ParseSQLWithOptions when CREATE TABLE field comment extraction is enabled.
+func BenchmarkPostgresParserWithOptions_FieldCommentsEnabled(b *testing.B) {
+	benchmarkPostgresParserWithOptions(b, postgresparser.ParseOptions{
+		IncludeCreateTableFieldComments: true,
+	})
+}
+
+func benchmarkPostgresParserWithOptions(b *testing.B, opts postgresparser.ParseOptions) {
+	for _, q := range optionBenchQueries {
+		b.Run(q.Name, func(b *testing.B) {
+			result, err := postgresparser.ParseSQLWithOptions(q.SQL, opts)
+			if err != nil {
+				b.Fatalf("ParseSQLWithOptions failed: %v", err)
+			}
+			if result == nil {
+				b.Fatal("ParseSQLWithOptions returned nil")
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				postgresparser.ParseSQLWithOptions(q.SQL, opts)
 			}
 		})
 	}

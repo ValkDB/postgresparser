@@ -72,7 +72,7 @@ go get github.com/valkdb/postgresparser
 Handles the SQL you actually write in production:
 
 - **DML**: SELECT, INSERT, UPDATE, DELETE, MERGE
-- **DDL**: CREATE TABLE (columns/type/nullability/default), CREATE INDEX, DROP TABLE/INDEX, ALTER TABLE, TRUNCATE
+- **DDL**: CREATE TABLE (columns/type/nullability/default), CREATE INDEX, DROP TABLE/INDEX, ALTER TABLE, TRUNCATE, COMMENT ON
 - **CTEs**: `WITH ... AS` including `RECURSIVE`, materialization hints
 - **JOINs**: INNER, LEFT, RIGHT, FULL, CROSS, NATURAL, LATERAL
 - **Subqueries**: in SELECT, FROM, WHERE, and HAVING
@@ -84,6 +84,7 @@ Handles the SQL you actually write in production:
 - **Parameters**: `$1`, `$2`, ...
 
 IR field reference: [ParsedQuery IR Reference](docs/parsed-query.md)
+Comment extraction guide: [Comment Extraction Guide](docs/comments.md)
 
 ## Statement Count Handling
 
@@ -95,6 +96,9 @@ Use the API variant that matches your input contract:
   - Correlation is deterministic: `Statements[i].Index` maps to source statement order.
   - `HasFailures` is `true` when any statement has a nil `Query` or any `Warnings`.
 - `ParseSQLStrict(sql)` requires exactly one statement and returns `ErrMultipleStatements` when input contains more than one.
+- `ParseSQLWithOptions(sql, opts)`, `ParseSQLAllWithOptions(sql, opts)`, and `ParseSQLStrictWithOptions(sql, opts)` expose optional extraction flags.
+  - `IncludeCreateTableFieldComments` enables inline `--` field-comment extraction in `CREATE TABLE`.
+  - `COMMENT ON` extraction is always enabled.
 
 ## Supported SQL Statements
 
@@ -103,7 +107,7 @@ See [docs/supported-statements.md](./docs/supported-statements.md) for full deta
 | Category | Statements | Status |
 |----------|-----------|--------|
 | **DML** | SELECT, INSERT, UPDATE, DELETE, MERGE | Full IR extraction |
-| **DDL** | CREATE TABLE, ALTER TABLE, DROP TABLE/INDEX, CREATE INDEX, TRUNCATE | Full IR extraction |
+| **DDL** | CREATE TABLE, ALTER TABLE, DROP TABLE/INDEX, CREATE INDEX, TRUNCATE, COMMENT ON | Full IR extraction |
 | **Utility** | SET, SHOW, RESET | Graceful — returns `UNKNOWN`, no error |
 | **Other** | GRANT, REVOKE, CREATE VIEW/FUNCTION/TRIGGER, COPY, EXPLAIN, VACUUM, BEGIN/COMMIT/ROLLBACK, etc. | Not yet supported — may error or return `UNKNOWN` |
 

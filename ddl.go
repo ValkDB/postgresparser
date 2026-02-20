@@ -12,7 +12,7 @@ import (
 
 // populateCreateTable handles CREATE TABLE metadata extraction (table + columns)
 // and enforces table-level PRIMARY KEY columns as Nullable=false.
-func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens antlr.TokenStream) error {
+func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens antlr.TokenStream, opts ParseOptions) error {
 	if ctx == nil {
 		return fmt.Errorf("create table statement: %w", ErrNilContext)
 	}
@@ -49,8 +49,15 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 		Flags:      flags,
 	}
 
-	if opts := ctx.Opttableelementlist(); opts != nil && opts.Tableelementlist() != nil {
-		tableElems := opts.Tableelementlist().AllTableelement()
+	var fieldCommentsByColumn map[string][]string
+	if opts.IncludeCreateTableFieldComments {
+		if prc, ok := ctx.(antlr.RuleContext); ok {
+			fieldCommentsByColumn = extractCreateTableFieldCommentsByColumn(ctxText(tokens, prc))
+		}
+	}
+
+	if optElems := ctx.Opttableelementlist(); optElems != nil && optElems.Tableelementlist() != nil {
+		tableElems := optElems.Tableelementlist().AllTableelement()
 		action.Columns = make([]string, 0, len(tableElems))
 		action.ColumnDetails = make([]DDLColumn, 0, len(tableElems))
 		primaryKeyCols := collectCreateTablePrimaryKeyColumns(tableElems)
@@ -58,7 +65,7 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 			if tableElem == nil || tableElem.ColumnDef() == nil {
 				continue
 			}
-			col := extractCreateTableColumn(tableElem.ColumnDef(), tokens)
+			col := extractCreateTableColumn(tableElem.ColumnDef(), tokens, fieldCommentsByColumn)
 			if col.Name == "" {
 				continue
 			}
@@ -76,7 +83,7 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 }
 
 // extractCreateTableColumn extracts metadata for a single CREATE TABLE column definition.
-func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenStream) DDLColumn {
+func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenStream, fieldCommentsByColumn map[string][]string) DDLColumn {
 	if colDef == nil {
 		return DDLColumn{}
 	}
@@ -85,6 +92,11 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 	if colid := colDef.Colid(); colid != nil {
 		if prc, ok := colid.(antlr.ParserRuleContext); ok {
 			col.Name = strings.TrimSpace(ctxText(tokens, prc))
+		}
+	}
+	if normalized := normalizeCreateTableColumnName(col.Name); normalized != "" {
+		if lines, ok := fieldCommentsByColumn[normalized]; ok {
+			col.Comment = append([]string(nil), lines...)
 		}
 	}
 	if typ := colDef.Typename(); typ != nil {
