@@ -100,3 +100,19 @@ func TestExtractJoinRelationshipsWithSchema_NilSchemaMap(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, relationships)
 }
+
+// TestBuildAliasMap_Normalization verifies quoted/whitespace identifiers are normalized
+// and only base tables are included for join FK inference.
+func TestBuildAliasMap_Normalization(t *testing.T) {
+	tables := []postgresparser.TableRef{
+		{Name: ` "Orders" `, Alias: ` "O" `, Type: postgresparser.TableTypeBase},
+		{Name: "active_orders", Alias: "ao", Type: postgresparser.TableTypeCTE},
+	}
+
+	aliasMap := buildAliasMap(tables)
+	assert.Equal(t, "orders", aliasMap["o"], "base alias should resolve after quote/space normalization")
+	assert.Equal(t, "orders", aliasMap["orders"], "base table name should be present after normalization")
+
+	_, hasCTEAlias := aliasMap["ao"]
+	assert.False(t, hasCTEAlias, "CTE aliases should not be included in FK-inference alias map")
+}

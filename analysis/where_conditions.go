@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/valkdb/postgresparser"
+	"github.com/valkdb/postgresparser/internal/ident"
 )
 
 var parameterRegex = regexp.MustCompile(`^\$\d+$|^\?$`)
@@ -57,6 +58,30 @@ type jsonbInfo struct {
 	castType string // Optional: the type it's being cast to (e.g., "int")
 }
 
+// buildWhereAliasMap creates alias->name mappings for WHERE extraction.
+// Unlike JOIN FK inference mapping, this includes all relation types (base, CTE,
+// subquery) so WhereCondition.Table is resolved consistently.
+//
+// Mappings are case-insensitive and normalized to lowercase to match PostgreSQL
+// behavior for unquoted identifiers.
+func buildWhereAliasMap(tables []postgresparser.TableRef) map[string]string {
+	aliasMap := make(map[string]string, len(tables)*2)
+
+	for _, table := range tables {
+		tableName := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(table.Name)))
+		if tableName == "" {
+			continue
+		}
+		tableAlias := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(table.Alias)))
+		if tableAlias != "" {
+			aliasMap[tableAlias] = tableName
+		}
+		aliasMap[tableName] = tableName
+	}
+
+	return aliasMap
+}
+
 // extractJSONBInfo checks if the context contains a JSONB pattern and extracts the info.
 // Detects patterns like "order_details->>'shipping_method' = 'express'"
 // and casted versions like "(metadata->>'score')::int >= 90"
@@ -79,15 +104,6 @@ func extractJSONBInfo(context string) *jsonbInfo {
 	}
 
 	return nil
-}
-
-// resolveTableName converts a table alias to the actual table name.
-// If no alias is found, returns the alias itself (it might be the actual table name).
-func resolveTableName(alias string, aliasMap map[string]string) string {
-	if alias == "" {
-		return ""
-	}
-	return resolveAlias(alias, aliasMap)
 }
 
 // normalizeOperator standardizes operator representation.

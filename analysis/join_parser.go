@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/valkdb/postgresparser"
+	"github.com/valkdb/postgresparser/internal/ident"
 )
 
 // equalityPattern matches equality conditions like "alias.column = alias.column" in JOIN ON clauses.
@@ -38,6 +39,8 @@ func ExtractJoinRelationshipsWithSchema(query string, schemaMap map[string][]Col
 }
 
 // buildAliasMap creates a map from table alias/name to actual table name.
+// This mapping is intentionally limited to base tables for FK inference.
+// For WHERE/table-resolution behavior across base+CTE+subquery, see buildWhereAliasMap.
 func buildAliasMap(tables []postgresparser.TableRef) map[string]string {
 	aliasMap := make(map[string]string)
 
@@ -47,11 +50,15 @@ func buildAliasMap(tables []postgresparser.TableRef) map[string]string {
 			continue
 		}
 
-		tableName := strings.ToLower(table.Name)
+		tableName := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(table.Name)))
+		if tableName == "" {
+			continue
+		}
+		tableAlias := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(table.Alias)))
 
 		// Map alias to table name
-		if table.Alias != "" {
-			aliasMap[strings.ToLower(table.Alias)] = tableName
+		if tableAlias != "" {
+			aliasMap[tableAlias] = tableName
 		}
 		// Also map table name to itself (for unaliased references)
 		aliasMap[tableName] = tableName
