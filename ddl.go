@@ -49,13 +49,6 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 		Flags:      flags,
 	}
 
-	var fieldCommentsByColumn map[string][]string
-	if opts.IncludeCreateTableFieldComments {
-		if prc, ok := ctx.(antlr.RuleContext); ok {
-			fieldCommentsByColumn = extractCreateTableFieldCommentsByColumn(ctxText(tokens, prc))
-		}
-	}
-
 	if optElems := ctx.Opttableelementlist(); optElems != nil && optElems.Tableelementlist() != nil {
 		tableElems := optElems.Tableelementlist().AllTableelement()
 		action.Columns = make([]string, 0, len(tableElems))
@@ -65,7 +58,7 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 			if tableElem == nil || tableElem.ColumnDef() == nil {
 				continue
 			}
-			col := extractCreateTableColumn(tableElem.ColumnDef(), tokens, fieldCommentsByColumn)
+			col := extractCreateTableColumn(tableElem.ColumnDef(), tokens, opts.IncludeCreateTableFieldComments)
 			if col.Name == "" {
 				continue
 			}
@@ -83,7 +76,7 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 }
 
 // extractCreateTableColumn extracts metadata for a single CREATE TABLE column definition.
-func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenStream, fieldCommentsByColumn map[string][]string) DDLColumn {
+func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenStream, includeComments bool) DDLColumn {
 	if colDef == nil {
 		return DDLColumn{}
 	}
@@ -94,10 +87,8 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 			col.Name = strings.TrimSpace(ctxText(tokens, prc))
 		}
 	}
-	if normalized := normalizeCreateTableColumnName(col.Name); normalized != "" {
-		if lines, ok := fieldCommentsByColumn[normalized]; ok {
-			col.Comment = append([]string(nil), lines...)
-		}
+	if includeComments {
+		col.Comment = extractColumnLeadingLineComments(colDef, tokens)
 	}
 	if typ := colDef.Typename(); typ != nil {
 		if prc, ok := typ.(antlr.ParserRuleContext); ok {
