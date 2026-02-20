@@ -811,6 +811,20 @@ func TestIR_DDL_CreateTableFieldComments_Table(t *testing.T) {
 			},
 			wantColumnSequence: []string{"name"},
 		},
+		{
+			name: "comment variants with spacing and dollar content",
+			sql: `CREATE TABLE public.users (
+    --    starts with spaces
+    --no-space-prefix
+    -- $tag marker
+    name text
+);`,
+			opts: ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				"name": {"starts with spaces", "no-space-prefix", "$tag marker"},
+			},
+			wantColumnSequence: []string{"name"},
+		},
 	}
 
 	commentsByName := func(cols []DDLColumn) map[string][]string {
@@ -857,11 +871,6 @@ func TestExtractCreateTableFieldCommentsByColumn_Table(t *testing.T) {
 		sql  string
 		want map[string][]string
 	}{
-		{
-			name: "empty input",
-			sql:  "",
-			want: nil,
-		},
 		{
 			name: "issue25 extraction",
 			sql: `CREATE TABLE public.users (
@@ -928,11 +937,36 @@ func TestExtractCreateTableFieldCommentsByColumn_Table(t *testing.T) {
 				"tags":    {"tags docs"},
 			},
 		},
+		{
+			name: "line comments trim leading spaces and keep dollar text",
+			sql: `CREATE TABLE t (
+    --    starts with spaces
+    --no-space-prefix
+    -- $tag marker
+    name text
+);`,
+			want: map[string][]string{
+				"name": {"starts with spaces", "no-space-prefix", "$tag marker"},
+			},
+		},
 	}
+
+	t.Run("nil inputs", func(t *testing.T) {
+		assert.Nil(t, extractCreateTableFieldCommentsByColumn(nil, nil))
+	})
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := extractCreateTableFieldCommentsByColumn(tc.sql)
+			state, err := prepareParseState(tc.sql, false)
+			require.NoError(t, err)
+			require.Len(t, state.stmts, 1)
+			createStmt := state.stmts[0].Createstmt()
+			require.NotNil(t, createStmt)
+			require.NotNil(t, createStmt.Opttableelementlist())
+			require.NotNil(t, createStmt.Opttableelementlist().Tableelementlist())
+
+			tableElems := createStmt.Opttableelementlist().Tableelementlist().AllTableelement()
+			got := extractCreateTableFieldCommentsByColumn(tableElems, state.stream)
 			assert.Equal(t, tc.want, got, "extracted comments mismatch")
 		})
 	}

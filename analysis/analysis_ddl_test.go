@@ -854,6 +854,19 @@ func TestAnalyzeSQL_DDL_CreateTableFieldComments_Table(t *testing.T) {
 				"email": {"user email"},
 			},
 		},
+		{
+			name: "comment variants with spacing and dollar content",
+			sql: `CREATE TABLE public.users (
+    --    starts with spaces
+    --no-space-prefix
+    -- $tag marker
+    name text
+);`,
+			opts: postgresparser.ParseOptions{IncludeCreateTableFieldComments: true},
+			wantCommentsByCol: map[string][]string{
+				"name": {"starts with spaces", "no-space-prefix", "$tag marker"},
+			},
+		},
 	}
 
 	commentsByName := func(cols []SQLDDLColumn) map[string][]string {
