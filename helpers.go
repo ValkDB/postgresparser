@@ -8,6 +8,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"github.com/valkdb/postgresparser/gen"
+	"github.com/valkdb/postgresparser/internal/ident"
 )
 
 // columnRef is an internal representation of a column reference.
@@ -153,16 +154,12 @@ func columnRefFromParts(parts []string) columnRef {
 	ref := columnRef{}
 	switch len(parts) {
 	case 1:
-		ref.Name = trimIdentQuotes(parts[0])
+		ref.Name = ident.TrimQuotes(parts[0])
 	default:
-		ref.TableAlias = trimIdentQuotes(parts[len(parts)-2])
-		ref.Name = trimIdentQuotes(parts[len(parts)-1])
+		ref.TableAlias = ident.TrimQuotes(parts[len(parts)-2])
+		ref.Name = ident.TrimQuotes(parts[len(parts)-1])
 	}
 	return ref
-}
-
-func trimIdentQuotes(s string) string {
-	return strings.Trim(s, `"`)
 }
 
 func tableRefAliasOrName(tr TableRef) string {
@@ -193,7 +190,7 @@ func recordUsingJoinFromString(result *ParsedQuery, clause string) {
 	rawCols := strings.Split(body, ",")
 	cols := make([]string, 0, len(rawCols))
 	for _, c := range rawCols {
-		col := trimIdentQuotes(strings.TrimSpace(c))
+		col := ident.TrimQuotes(strings.TrimSpace(c))
 		if col != "" {
 			cols = append(cols, col)
 		}
@@ -220,8 +217,8 @@ func recordUsingJoinFromParts(result *ParsedQuery, cols []string, context string
 	}
 	left := base[1]
 	right := base[0]
-	leftAlias := trimIdentQuotes(tableRefAliasOrName(left))
-	rightAlias := trimIdentQuotes(tableRefAliasOrName(right))
+	leftAlias := ident.TrimQuotes(tableRefAliasOrName(left))
+	rightAlias := ident.TrimQuotes(tableRefAliasOrName(right))
 	for _, col := range cols {
 		if col == "" {
 			continue

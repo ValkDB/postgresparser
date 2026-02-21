@@ -8,6 +8,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"github.com/valkdb/postgresparser/gen"
+	"github.com/valkdb/postgresparser/internal/ident"
 )
 
 // populateCreateTable handles CREATE TABLE metadata extraction (table + columns)
@@ -153,7 +154,7 @@ func normalizeCreateTableColumnName(name string) string {
 	if len(trimmed) >= 2 && strings.HasPrefix(trimmed, `"`) && strings.HasSuffix(trimmed, `"`) {
 		return strings.ReplaceAll(trimmed[1:len(trimmed)-1], `""`, `"`)
 	}
-	return strings.ToLower(trimIdentQuotes(trimmed))
+	return strings.ToLower(ident.TrimQuotes(trimmed))
 }
 
 // populateDropStmt handles DROP TABLE, DROP INDEX, and DROP INDEX CONCURRENTLY.

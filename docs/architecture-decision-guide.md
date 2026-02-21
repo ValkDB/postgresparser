@@ -1,61 +1,112 @@
 # Architecture Decision Guide: Core Parser vs Analysis Layer
 
-Where does a new feature belong? Use this guide when deciding.
+Two layers, one rule: **core parser extracts from grammar, analysis interprets from IR**.
 
-- **Core parser** (`postgresparser` root) — SQL text in, `ParsedQuery` IR out. Walks ANTLR parse tree nodes. No external inputs.
-  Key files: `entry.go`, `ir.go`, `select.go`, `dml_*.go`, `ddl.go`, `merge.go`, `setops.go`
-
-- **Analysis layer** (`analysis/`) — operates on `*ParsedQuery` + optional external metadata (`ColumnSchema`). Interprets, composes, enriches.
-  Key files: `analysis/analysis.go`, `analysis/types.go`, `analysis/where_conditions.go`, `analysis/join_parser.go`, `analysis/combined_extractor.go`, `analysis/helpers.go`
-
-## Decision Flowchart
+## The Two Layers
 
 ```
-New feature or enhancement
-|
-+- Does it require external inputs beyond SQL text?
-|  (schema metadata, PK info, config, runtime state)
-|  YES -> analysis/
-|
-+- Does it parse/interpret raw string fields from the IR?
-|  (extracting operators from WHERE strings, splitting JOIN conditions)
-|  YES -> analysis/
-|
-+- Does it walk ANTLR parse tree nodes (gen.*Context)?
-|  YES -> core parser (ddl.go, select.go, dml_*.go, or new file)
-|
-+- Is it a new IR field that the grammar directly provides?
-|  YES -> core parser (ir.go for type, visitor file for extraction)
-|
-+- Is it a convenience/utility over existing IR fields?
-|  YES -> analysis/helpers.go
-|
-+- None of the above?
-   -> Discuss. It's probably analysis/, but worth reviewing.
+SQL text ──> [ Core Parser ] ──> ParsedQuery (IR) ──> [ Analysis ] ──> Consumer DTOs
+                  │                                        │
+                  │ ANTLR tree walks                       │ IR + optional schema metadata
+                  │ No external inputs                     │ Normalizes, resolves, infers
+                  │                                        │
+                  ├─ entry.go          ┌─ analysis/analysis.go
+                  ├─ ir.go             ├─ analysis/types.go
+                  ├─ select.go         ├─ analysis/where_conditions.go
+                  ├─ dml_*.go          ├─ analysis/join_parser.go
+                  ├─ ddl.go            ├─ analysis/combined_extractor.go
+                  └─ merge.go          └─ analysis/helpers.go
 ```
 
-## Examples
+## Where Does It Go?
 
-### Core parser:
+```
+                      ┌──────────────────────┐
+                      │    New feature        │
+                      └──────────┬───────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │ Needs external inputs?  │
+                    │ (schema, PK info, etc.) │
+                    └─────┬────────────┬──────┘
+                      YES │            │ NO
+                          │   ┌────────▼────────┐
+                          │   │ Walks ANTLR tree │
+                          │   │ (gen.*Context)?  │
+                          │   └──┬──────────┬───┘
+                          │  YES │          │ NO
+                          │      │  ┌───────▼────────────┐
+                          │      │  │ Interprets/parses  │
+                          │      │  │ raw IR strings?    │
+                          │      │  └──┬──────────┬──────┘
+                          │      │ YES │          │ NO
+                          │      │     │  ┌───────▼────────────┐
+                          │      │     │  │ New grammar-backed  │
+                          │      │     │  │ IR field?           │
+                          │      │     │  └──┬──────────┬──────┘
+                          │      │     │ YES │          │ NO
+                          ▼      │     ▼     │          ▼
+                     ┌─────────┐ │ ┌────────┐│   ┌──────────┐
+                     │analysis/│ │ │analysis/││   │ analysis/ │
+                     └─────────┘ │ └────────┘│   │ (default) │
+                          ┌──────▼──┐  ┌─────▼┐  └──────────┘
+                          │  core   │  │ core │
+                          │ parser  │  │parser│
+                          └─────────┘  └──────┘
+```
 
-| Feature | Why |
+## API Quick Reference
+
+| You want to... | Use | Layer |
+|---|---|---|
+| Parse SQL to raw IR | `postgresparser.ParseSQL*` | Core |
+| Get consumer-ready query DTO | `analysis.AnalyzeSQL*` | Analysis |
+| Get structured WHERE constraints | `analysis.ExtractWhereConditions` | Analysis |
+| Infer FK-like JOIN relationships | `analysis.ExtractJoinRelationshipsWithSchema` | Analysis |
+| One-pass WHERE + JOIN + schema | `analysis.ExtractQueryAnalysisWithSchema` | Analysis |
+
+## What Goes Where — By Example
+
+### Core parser (grammar extraction)
+
+| Feature | Reason |
 |---|---|
-| Extract RETURNING clause columns | Direct parse tree extraction |
-| Parse window function PARTITION BY | Grammar-level clause, walks `gen.*Context` |
-| Add `CONCURRENTLY` flag to DDL | Direct flag from parse tree node |
-| Support MERGE statement | New statement type, needs new visitor file |
+| RETURNING clause columns | Direct parse tree node |
+| Window function PARTITION BY | Grammar-level clause, walks `gen.*Context` |
+| `CONCURRENTLY` flag on DDL | Single flag from parse tree |
+| MERGE statement support | New statement type, new visitor |
 
-### Analysis:
+### Analysis (interpretation + external metadata)
 
-| Feature | Why |
+| Feature | Reason |
 |---|---|
-| Structured WHERE conditions (operator, value, table) | Interprets raw IR strings |
-| FK relationship detection from JOINs | Requires schema metadata (`IsPrimaryKey`) |
-| Query complexity scoring | Derived metric from IR fields |
-| Missing-WHERE-on-DELETE detection | Semantic rule, not grammar extraction |
-| Schema validation (do referenced columns exist?) | Requires external schema metadata |
-| `BaseTables()` | Convenience function over IR/DTO |
+| Structured WHERE conditions | Interprets raw IR strings (operator, value, table) |
+| FK relationship detection | Needs `ColumnSchema.IsPrimaryKey` from caller |
+| Query complexity scoring | Derived metric over IR fields |
+| Missing-WHERE-on-DELETE check | Semantic rule, not grammar |
+| Schema validation | Needs external column metadata |
+| `BaseTables()` | Convenience over IR table refs |
 
-## Why WithSchema Methods Stay in Analysis
+## Boundary Rules
 
-`ExtractJoinRelationshipsWithSchema` and `ExtractQueryAnalysisWithSchema` accept `map[string][]ColumnSchema` — external metadata the grammar cannot provide. The core parser's contract is "SQL text in, IR out" with no side inputs. These functions require DB metadata, perform semantic inference, and return types with no grammar-level equivalent.
+1. **Core parser owns grammar extraction.** Value comes from ANTLR nodes/tokens → core IR.
+2. **Analysis owns interpretation.** Derived/normalized from IR fields (alias resolution, operator normalization, value parsing) → analysis.
+3. **No mirrored contracts.** Don't add the same DTO to both `ir.go` and `analysis/types.go`.
+4. **Pay-for-what-you-use.** Heavy interpretation stays behind analysis APIs. `ParseSQL` stays fast for callers who only need IR.
+
+## Case Study: Why `WhereCondition` Lives in Analysis
+
+Not in core IR. Here's why:
+
+1. Core already exposes raw WHERE data (`ParsedQuery.Where`, `ParsedQuery.ColumnUsage`).
+2. `WhereCondition` is an interpreted projection — operator normalization, value extraction, alias-to-table resolution.
+3. This logic is policy. It evolves independently from parse-tree extraction.
+4. Keeping it out of core avoids penalizing callers who only need IR.
+
+Same logic applies to `ExtractJoinRelationshipsWithSchema` and `ExtractQueryAnalysisWithSchema` — they accept `map[string][]ColumnSchema` (external metadata the grammar can't provide). Core's contract is "SQL text in, IR out, no side inputs."
+
+## Anti-Patterns
+
+- Adding analysis DTOs to `ir.go` "for convenience"
+- Re-implementing the same transformation in both core and analysis
+- Putting schema-dependent logic inside core parser visitors

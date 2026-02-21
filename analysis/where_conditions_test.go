@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valkdb/postgresparser"
 )
 
 // =============================================================================
@@ -987,9 +988,8 @@ func TestNormalizeOperator(t *testing.T) {
 	}
 }
 
-// TestResolveTableName verifies alias-to-table resolution through ExtractWhereConditions.
-func TestResolveTableName(t *testing.T) {
-	// Test through ExtractWhereConditions since resolveTableName is not exported
+// TestExtractWhereConditions_TableResolution verifies alias-to-table resolution through ExtractWhereConditions.
+func TestExtractWhereConditions_TableResolution(t *testing.T) {
 	tests := []struct {
 		name          string
 		query         string
@@ -1010,6 +1010,21 @@ func TestResolveTableName(t *testing.T) {
 			query:         "SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id WHERE o.status = 'pending'",
 			expectedTable: "orders",
 		},
+		{
+			name:          "uppercase alias resolves case-insensitively",
+			query:         "SELECT * FROM orders O WHERE O.status = 'pending'",
+			expectedTable: "orders",
+		},
+		{
+			name:          "mixed-case unquoted table normalizes to lowercase (intentional)",
+			query:         "SELECT * FROM Orders O WHERE O.status = 'pending'",
+			expectedTable: "orders",
+		},
+		{
+			name:          "cte alias resolves to cte name",
+			query:         "WITH active_orders AS (SELECT * FROM orders) SELECT * FROM active_orders ao WHERE ao.total > 100",
+			expectedTable: "active_orders",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1021,6 +1036,21 @@ func TestResolveTableName(t *testing.T) {
 			assert.Equal(t, tt.expectedTable, conditions[0].Table)
 		})
 	}
+}
+
+// TestBuildWhereAliasMap verifies WHERE alias-map resolution behavior.
+func TestBuildWhereAliasMap(t *testing.T) {
+	tables := []postgresparser.TableRef{
+		{Name: ` "Orders" `, Alias: ` "O" `, Type: postgresparser.TableTypeBase},
+		{Name: ` "active_orders" `, Alias: ` "ao" `, Type: postgresparser.TableTypeCTE},
+		{Name: "derived_orders", Alias: " do ", Type: postgresparser.TableTypeSubquery},
+	}
+	aliasMap := buildWhereAliasMap(tables)
+
+	assert.Equal(t, "orders", resolveAlias("O", aliasMap), "should resolve aliases case-insensitively")
+	assert.Equal(t, "orders", resolveAlias("orders", aliasMap), "should resolve direct base table names")
+	assert.Equal(t, "active_orders", resolveAlias("AO", aliasMap), "should resolve CTE aliases")
+	assert.Equal(t, "derived_orders", resolveAlias("do", aliasMap), "should resolve subquery aliases")
 }
 
 // TestExtractInValues validates parsing of IN value lists with integers, strings, and edge cases.
