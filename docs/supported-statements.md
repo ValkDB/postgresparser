@@ -20,7 +20,7 @@ These statements are walked via ANTLR visitors and produce rich IR metadata in `
 | `UPDATE` | `UPDATE` | `Tables`, `SetClauses`, `Where`, `Returning`, `CTEs`, `ColumnUsage` |
 | `DELETE` | `DELETE` | `Tables`, `Where`, `Returning`, `CTEs`, `ColumnUsage` |
 | `MERGE` | `MERGE` | `Tables`, `Merge` (target, source, condition, actions) |
-| `CREATE TABLE` | `DDL` | `Tables`, `DDLActions` (with `ColumnDetails`) |
+| `CREATE TABLE` | `DDL` | `Tables`, `DDLActions` (with `ColumnDetails`, `PrimaryKey`, `ForeignKeys`) |
 | `ALTER TABLE` | `DDL` | `Tables`, `DDLActions` |
 | `DROP TABLE` / `DROP INDEX` | `DDL` | `DDLActions` (with `Flags`) |
 | `CREATE INDEX` | `DDL` | `DDLActions` (with `IndexType`) |

@@ -427,6 +427,8 @@ func convertDDLActions(actions []postgresparser.DDLAction) []SQLDDLAction {
 			Schema:        a.Schema,
 			Columns:       append([]string(nil), a.Columns...),
 			ColumnDetails: convertDDLColumns(a.ColumnDetails),
+			PrimaryKey:    convertDDLPrimaryKey(a.PrimaryKey),
+			ForeignKeys:   convertDDLForeignKeys(a.ForeignKeys),
 			Flags:         append([]string(nil), a.Flags...),
 			IndexType:     a.IndexType,
 			Target:        a.Target,
@@ -449,6 +451,35 @@ func convertDDLColumns(cols []postgresparser.DDLColumn) []SQLDDLColumn {
 			Nullable: c.Nullable,
 			Default:  c.Default,
 			Comment:  append([]string(nil), c.Comment...),
+		})
+	}
+	return out
+}
+
+// convertDDLPrimaryKey maps parser CREATE TABLE PK metadata into analysis DTOs.
+func convertDDLPrimaryKey(pk *postgresparser.DDLPrimaryKey) *SQLDDLPrimaryKey {
+	if pk == nil {
+		return nil
+	}
+	return &SQLDDLPrimaryKey{
+		ConstraintName: pk.ConstraintName,
+		Columns:        append([]string(nil), pk.Columns...),
+	}
+}
+
+// convertDDLForeignKeys maps parser CREATE TABLE FK metadata into analysis DTOs.
+func convertDDLForeignKeys(fks []postgresparser.DDLForeignKey) []SQLDDLForeignKey {
+	if len(fks) == 0 {
+		return nil
+	}
+	out := make([]SQLDDLForeignKey, 0, len(fks))
+	for _, fk := range fks {
+		out = append(out, SQLDDLForeignKey{
+			ConstraintName:    fk.ConstraintName,
+			Columns:           append([]string(nil), fk.Columns...),
+			ReferencesSchema:  fk.ReferencesSchema,
+			ReferencesTable:   fk.ReferencesTable,
+			ReferencesColumns: append([]string(nil), fk.ReferencesColumns...),
 		})
 	}
 	return out

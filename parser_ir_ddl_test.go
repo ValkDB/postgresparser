@@ -366,6 +366,12 @@ func TestIR_DDL_CreateTable_TablePrimaryKeySetsNullableFalse(t *testing.T) {
 		{Name: "tenant_id", Type: "integer", Nullable: false},
 		{Name: "payload", Type: "text", Nullable: true},
 	}, act.ColumnDetails, "column details mismatch")
+	require.NotNil(t, act.PrimaryKey, "expected primary key metadata")
+	assert.Equal(t, &DDLPrimaryKey{
+		ConstraintName: "accounts_pk",
+		Columns:        []string{"id", "tenant_id"},
+	}, act.PrimaryKey, "primary key metadata mismatch")
+	assert.Empty(t, act.ForeignKeys, "foreign keys mismatch")
 
 	require.Len(t, ir.Tables, 1, "tables count mismatch")
 	assert.Equal(t, "public", ir.Tables[0].Schema, "table schema mismatch")
@@ -394,10 +400,96 @@ func TestIR_DDL_CreateTable_TablePrimaryKeySetsNullableFalse_NoSchema(t *testing
 		{Name: "tenant_id", Type: "integer", Nullable: false},
 		{Name: "payload", Type: "text", Nullable: true},
 	}, act.ColumnDetails, "column details mismatch")
+	require.NotNil(t, act.PrimaryKey, "expected primary key metadata")
+	assert.Equal(t, &DDLPrimaryKey{
+		Columns: []string{"id", "tenant_id"},
+	}, act.PrimaryKey, "primary key metadata mismatch")
+	assert.Empty(t, act.ForeignKeys, "foreign keys mismatch")
 
 	require.Len(t, ir.Tables, 1, "tables count mismatch")
 	assert.Empty(t, ir.Tables[0].Schema, "table schema mismatch")
 	assert.Equal(t, "accounts", ir.Tables[0].Name, "table name mismatch")
+}
+
+func TestIR_DDL_CreateTable_Relationships_TableConstraints(t *testing.T) {
+	sql := `CREATE TABLE public.users (
+    id integer,
+    org_id integer,
+    region text NOT NULL,
+    branch_id integer NOT NULL,
+    CONSTRAINT users_pk PRIMARY KEY (id),
+    CONSTRAINT users_org_fk FOREIGN KEY (org_id) REFERENCES public.organizations(id),
+    CONSTRAINT users_branch_fk FOREIGN KEY (region, branch_id) REFERENCES public.branches(region, branch_id)
+);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLCreateTable, act.Type, "expected CREATE_TABLE")
+
+	require.NotNil(t, act.PrimaryKey, "expected primary key metadata")
+	assert.Equal(t, &DDLPrimaryKey{
+		ConstraintName: "users_pk",
+		Columns:        []string{"id"},
+	}, act.PrimaryKey, "primary key metadata mismatch")
+
+	assert.Equal(t, []DDLForeignKey{
+		{
+			ConstraintName:    "users_org_fk",
+			Columns:           []string{"org_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "organizations",
+			ReferencesColumns: []string{"id"},
+		},
+		{
+			ConstraintName:    "users_branch_fk",
+			Columns:           []string{"region", "branch_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "branches",
+			ReferencesColumns: []string{"region", "branch_id"},
+		},
+	}, act.ForeignKeys, "foreign keys mismatch")
+
+	require.Len(t, act.ColumnDetails, 4, "column details mismatch")
+	assert.Equal(t, DDLColumn{Name: "id", Type: "integer", Nullable: false}, act.ColumnDetails[0], "id column mismatch")
+}
+
+func TestIR_DDL_CreateTable_Relationships_InlineConstraints(t *testing.T) {
+	sql := `CREATE TABLE public.memberships (
+    id integer PRIMARY KEY,
+    org_id integer CONSTRAINT memberships_org_fk REFERENCES public.organizations(id),
+    branch_id integer REFERENCES branches(id)
+);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLCreateTable, act.Type, "expected CREATE_TABLE")
+
+	require.NotNil(t, act.PrimaryKey, "expected primary key metadata")
+	assert.Equal(t, &DDLPrimaryKey{
+		Columns: []string{"id"},
+	}, act.PrimaryKey, "primary key metadata mismatch")
+
+	assert.Equal(t, []DDLForeignKey{
+		{
+			ConstraintName:    "memberships_org_fk",
+			Columns:           []string{"org_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "organizations",
+			ReferencesColumns: []string{"id"},
+		},
+		{
+			Columns:           []string{"branch_id"},
+			ReferencesTable:   "branches",
+			ReferencesColumns: []string{"id"},
+		},
+	}, act.ForeignKeys, "foreign keys mismatch")
+
+	require.Len(t, act.ColumnDetails, 3, "column details mismatch")
+	assert.Equal(t, DDLColumn{Name: "id", Type: "integer", Nullable: false}, act.ColumnDetails[0], "id column mismatch")
 }
 
 func TestIR_DDL_CreateTableTypeCoverage(t *testing.T) {

@@ -420,6 +420,12 @@ func TestAnalyzeSQL_DDL_CreateTable(t *testing.T) {
 			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
 		}
 	}
+	if act.PrimaryKey != nil {
+		t.Fatalf("expected no primary key metadata, got %+v", act.PrimaryKey)
+	}
+	if len(act.ForeignKeys) != 0 {
+		t.Fatalf("expected no foreign key metadata, got %+v", act.ForeignKeys)
+	}
 
 	if len(res.Tables) != 1 {
 		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
@@ -470,6 +476,15 @@ func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse(t *testing.
 		if !reflect.DeepEqual(act.ColumnDetails[i], want[i]) {
 			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
 		}
+	}
+	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+		ConstraintName: "accounts_pk",
+		Columns:        []string{"id", "tenant_id"},
+	}) {
+		t.Fatalf("primary key mismatch: got %+v", act.PrimaryKey)
+	}
+	if len(act.ForeignKeys) != 0 {
+		t.Fatalf("expected no foreign key metadata, got %+v", act.ForeignKeys)
 	}
 
 	if len(res.Tables) != 1 {
@@ -522,12 +537,123 @@ func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse_NoSchema(t 
 			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
 		}
 	}
+	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+		Columns: []string{"id", "tenant_id"},
+	}) {
+		t.Fatalf("primary key mismatch: got %+v", act.PrimaryKey)
+	}
+	if len(act.ForeignKeys) != 0 {
+		t.Fatalf("expected no foreign key metadata, got %+v", act.ForeignKeys)
+	}
 
 	if len(res.Tables) != 1 {
 		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
 	}
 	if res.Tables[0].Schema != "" || res.Tables[0].Name != "accounts" {
 		t.Fatalf("expected table accounts with empty schema, got %+v", res.Tables[0])
+	}
+}
+
+func TestAnalyzeSQL_DDL_CreateTable_Relationships_TableConstraints(t *testing.T) {
+	sql := `CREATE TABLE public.users (
+    id integer,
+    org_id integer,
+    region text NOT NULL,
+    branch_id integer NOT NULL,
+    CONSTRAINT users_pk PRIMARY KEY (id),
+    CONSTRAINT users_org_fk FOREIGN KEY (org_id) REFERENCES public.organizations(id),
+    CONSTRAINT users_branch_fk FOREIGN KEY (region, branch_id) REFERENCES public.branches(region, branch_id)
+);`
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d: %+v", len(res.DDLActions), res.DDLActions)
+	}
+
+	act := res.DDLActions[0]
+	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+		ConstraintName: "users_pk",
+		Columns:        []string{"id"},
+	}) {
+		t.Fatalf("primary key mismatch: got %+v", act.PrimaryKey)
+	}
+	wantFKs := []SQLDDLForeignKey{
+		{
+			ConstraintName:    "users_org_fk",
+			Columns:           []string{"org_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "organizations",
+			ReferencesColumns: []string{"id"},
+		},
+		{
+			ConstraintName:    "users_branch_fk",
+			Columns:           []string{"region", "branch_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "branches",
+			ReferencesColumns: []string{"region", "branch_id"},
+		},
+	}
+	if !reflect.DeepEqual(act.ForeignKeys, wantFKs) {
+		t.Fatalf("foreign keys mismatch: got %+v want %+v", act.ForeignKeys, wantFKs)
+	}
+	if len(act.ColumnDetails) != 4 {
+		t.Fatalf("expected 4 column details, got %d", len(act.ColumnDetails))
+	}
+	if !reflect.DeepEqual(act.ColumnDetails[0], SQLDDLColumn{Name: "id", Type: "integer", Nullable: false}) {
+		t.Fatalf("id column mismatch: got %+v", act.ColumnDetails[0])
+	}
+}
+
+func TestAnalyzeSQL_DDL_CreateTable_Relationships_InlineConstraints(t *testing.T) {
+	sql := `CREATE TABLE public.memberships (
+    id integer PRIMARY KEY,
+    org_id integer CONSTRAINT memberships_org_fk REFERENCES public.organizations(id),
+    branch_id integer REFERENCES branches(id)
+);`
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d: %+v", len(res.DDLActions), res.DDLActions)
+	}
+
+	act := res.DDLActions[0]
+	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+		Columns: []string{"id"},
+	}) {
+		t.Fatalf("primary key mismatch: got %+v", act.PrimaryKey)
+	}
+	wantFKs := []SQLDDLForeignKey{
+		{
+			ConstraintName:    "memberships_org_fk",
+			Columns:           []string{"org_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "organizations",
+			ReferencesColumns: []string{"id"},
+		},
+		{
+			Columns:           []string{"branch_id"},
+			ReferencesTable:   "branches",
+			ReferencesColumns: []string{"id"},
+		},
+	}
+	if !reflect.DeepEqual(act.ForeignKeys, wantFKs) {
+		t.Fatalf("foreign keys mismatch: got %+v want %+v", act.ForeignKeys, wantFKs)
+	}
+	if len(act.ColumnDetails) != 3 {
+		t.Fatalf("expected 3 column details, got %d", len(act.ColumnDetails))
+	}
+	if !reflect.DeepEqual(act.ColumnDetails[0], SQLDDLColumn{Name: "id", Type: "integer", Nullable: false}) {
+		t.Fatalf("id column mismatch: got %+v", act.ColumnDetails[0])
 	}
 }
 

@@ -88,6 +88,8 @@ Common DDL action fields:
 - `Flags`: Modifiers like `IF_EXISTS`, `IF_NOT_EXISTS`, `CASCADE`, `CONCURRENTLY`, etc.
 - `IndexType`: Index method for `CREATE_INDEX` (for example `btree`, `gin`).
 - `ColumnDetails`: Column metadata for `CREATE_TABLE` actions.
+- `PrimaryKey`: Optional primary key constraint metadata for `CREATE_TABLE`.
+- `ForeignKeys`: Optional foreign key constraint metadata for `CREATE_TABLE`.
 - `Target`: Generic fully-qualified target path for comment-like actions (for example `public.users.email`).
 - `Comment`: Comment text for `COMMENT` actions.
 
@@ -98,8 +100,20 @@ Common DDL action fields:
 - `Default`
 - `Comment` (`[]string`, optional): inline `--` comment lines preceding a column definition when `IncludeCreateTableFieldComments=true`.
 
+`PrimaryKey` (`*DDLPrimaryKey`) fields:
+- `ConstraintName` (optional)
+- `Columns`
+
+`ForeignKeys` (`[]DDLForeignKey`) fields:
+- `ConstraintName` (optional)
+- `Columns`
+- `ReferencesSchema` (optional)
+- `ReferencesTable`
+- `ReferencesColumns` (optional)
+
 Current DDL convention:
 - `CREATE_TABLE` populates `ColumnDetails`.
+- `CREATE_TABLE` also populates `PrimaryKey` and `ForeignKeys` for inline and table-level constraints.
 - `COMMENT ON ...` populates `DDLActions` with `Type=COMMENT`.
 - Other DDL actions currently do not populate `ColumnDetails`.
 - `ALTER_TABLE` uses `Columns` and `Flags` for operation-level details.

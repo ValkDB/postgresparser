@@ -136,6 +136,21 @@ type DDLColumn struct {
 	Comment  []string // Optional line comments immediately preceding column definition.
 }
 
+// DDLPrimaryKey describes a CREATE TABLE primary key constraint.
+type DDLPrimaryKey struct {
+	ConstraintName string
+	Columns        []string
+}
+
+// DDLForeignKey describes a CREATE TABLE foreign key constraint.
+type DDLForeignKey struct {
+	ConstraintName    string
+	Columns           []string
+	ReferencesSchema  string
+	ReferencesTable   string
+	ReferencesColumns []string
+}
+
 // DDLAction describes a single DDL operation extracted from a statement.
 type DDLAction struct {
 	Type          DDLActionType
@@ -144,10 +159,12 @@ type DDLAction struct {
 	Schema        string      // Optional schema qualifier
 	Columns       []string    // Affected columns
 	ColumnDetails []DDLColumn // Column metadata (CREATE TABLE)
-	Flags         []string    // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
-	IndexType     string      // btree, gin, gist, hash (CREATE INDEX only)
-	Target        string      // Generic fully-qualified target path for comment-like actions.
-	Comment       string      // Comment text for COMMENT ON statements.
+	PrimaryKey    *DDLPrimaryKey
+	ForeignKeys   []DDLForeignKey
+	Flags         []string // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
+	IndexType     string   // btree, gin, gist, hash (CREATE INDEX only)
+	Target        string   // Generic fully-qualified target path for comment-like actions.
+	Comment       string   // Comment text for COMMENT ON statements.
 }
 
 // SubqueryRef records metadata for subqueries discovered in FROM or set operations.

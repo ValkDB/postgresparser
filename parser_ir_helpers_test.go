@@ -116,6 +116,50 @@ func TestCollectCreateTablePrimaryKeyColumns(t *testing.T) {
 	})
 }
 
+func TestExtractCreateTableRelationships(t *testing.T) {
+	sql := `CREATE TABLE public.users (
+    id integer,
+    org_id integer CONSTRAINT users_org_fk REFERENCES public.organizations(id),
+    region text,
+    branch_id integer,
+    CONSTRAINT users_pk PRIMARY KEY (id),
+    CONSTRAINT users_branch_fk FOREIGN KEY (region, branch_id) REFERENCES public.branches(region, branch_id)
+);`
+
+	state, err := prepareParseState(sql, false)
+	require.NoError(t, err)
+	require.Len(t, state.stmts, 1)
+
+	createStmt := state.stmts[0].Createstmt()
+	require.NotNil(t, createStmt)
+	require.NotNil(t, createStmt.Opttableelementlist())
+	require.NotNil(t, createStmt.Opttableelementlist().Tableelementlist())
+	tableElems := createStmt.Opttableelementlist().Tableelementlist().AllTableelement()
+
+	pk, fks := extractCreateTableRelationships(tableElems, state.stream)
+	require.NotNil(t, pk)
+	assert.Equal(t, &DDLPrimaryKey{
+		ConstraintName: "users_pk",
+		Columns:        []string{"id"},
+	}, pk)
+	assert.Equal(t, []DDLForeignKey{
+		{
+			ConstraintName:    "users_org_fk",
+			Columns:           []string{"org_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "organizations",
+			ReferencesColumns: []string{"id"},
+		},
+		{
+			ConstraintName:    "users_branch_fk",
+			Columns:           []string{"region", "branch_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "branches",
+			ReferencesColumns: []string{"region", "branch_id"},
+		},
+	}, fks)
+}
+
 // parseCreateTableElements returns CREATE TABLE table elements for helper-level DDL extraction tests.
 func parseCreateTableElements(t *testing.T, sql string) []gen.ITableelementContext {
 	t.Helper()

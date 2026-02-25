@@ -54,7 +54,8 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 		tableElems := optElems.Tableelementlist().AllTableelement()
 		action.Columns = make([]string, 0, len(tableElems))
 		action.ColumnDetails = make([]DDLColumn, 0, len(tableElems))
-		primaryKeyCols := collectCreateTablePrimaryKeyColumns(tableElems)
+		action.PrimaryKey, action.ForeignKeys = extractCreateTableRelationships(tableElems, tokens)
+		primaryKeyCols := createTablePrimaryKeyColumnSet(action.PrimaryKey)
 		var fieldCommentsByColumn map[string][]string
 		if opts.IncludeCreateTableFieldComments {
 			fieldCommentsByColumn = extractCreateTableFieldCommentsByColumn(tableElems, tokens)
@@ -124,6 +125,246 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 		}
 	}
 	return col
+}
+
+// extractCreateTableRelationships extracts CREATE TABLE PK/FK metadata from
+// inline and table-level constraints.
+func extractCreateTableRelationships(tableElems []gen.ITableelementContext, tokens antlr.TokenStream) (*DDLPrimaryKey, []DDLForeignKey) {
+	if len(tableElems) == 0 {
+		return nil, nil
+	}
+
+	var (
+		primaryKey  *DDLPrimaryKey
+		foreignKeys []DDLForeignKey
+	)
+
+	for _, tableElem := range tableElems {
+		if tableElem == nil {
+			continue
+		}
+
+		if colDef := tableElem.ColumnDef(); colDef != nil {
+			colPK, colFKs := extractCreateTableColumnRelationships(colDef, tokens)
+			if primaryKey == nil && colPK != nil {
+				primaryKey = colPK
+			}
+			if len(colFKs) > 0 {
+				foreignKeys = append(foreignKeys, colFKs...)
+			}
+			continue
+		}
+
+		if tableConstraint := tableElem.Tableconstraint(); tableConstraint != nil {
+			tablePK, tableFKs := extractCreateTableTableConstraintRelationships(tableConstraint, tokens)
+			if primaryKey == nil && tablePK != nil {
+				primaryKey = tablePK
+			}
+			if len(tableFKs) > 0 {
+				foreignKeys = append(foreignKeys, tableFKs...)
+			}
+		}
+	}
+
+	if len(foreignKeys) == 0 {
+		return primaryKey, nil
+	}
+	return primaryKey, foreignKeys
+}
+
+// extractCreateTableColumnRelationships extracts PK/FK metadata from inline
+// column constraints.
+func extractCreateTableColumnRelationships(colDef gen.IColumnDefContext, tokens antlr.TokenStream) (*DDLPrimaryKey, []DDLForeignKey) {
+	if colDef == nil || colDef.Colquallist() == nil {
+		return nil, nil
+	}
+
+	colName := ""
+	if colid := colDef.Colid(); colid != nil {
+		if prc, ok := colid.(antlr.ParserRuleContext); ok {
+			colName = strings.TrimSpace(ctxText(tokens, prc))
+		}
+		if colName == "" {
+			colName = strings.TrimSpace(colid.GetText())
+		}
+	}
+	if colName == "" {
+		return nil, nil
+	}
+
+	var (
+		primaryKey  *DDLPrimaryKey
+		foreignKeys []DDLForeignKey
+	)
+
+	for _, constraint := range colDef.Colquallist().AllColconstraint() {
+		if constraint == nil || constraint.Colconstraintelem() == nil {
+			continue
+		}
+
+		elem := constraint.Colconstraintelem()
+		constraintName := createTableConstraintName(constraint.Name(), tokens)
+
+		if primaryKey == nil && elem.PRIMARY() != nil && elem.KEY() != nil {
+			primaryKey = &DDLPrimaryKey{
+				ConstraintName: constraintName,
+				Columns:        []string{colName},
+			}
+		}
+
+		if elem.REFERENCES() == nil || elem.Qualified_name() == nil {
+			continue
+		}
+
+		foreignKeys = append(foreignKeys, createTableForeignKeyFromReference(
+			constraintName,
+			[]string{colName},
+			elem.Qualified_name(),
+			elem.Column_list_(),
+			tokens,
+		))
+	}
+
+	if len(foreignKeys) == 0 {
+		return primaryKey, nil
+	}
+	return primaryKey, foreignKeys
+}
+
+// extractCreateTableTableConstraintRelationships extracts PK/FK metadata from
+// table-level constraints.
+func extractCreateTableTableConstraintRelationships(tableConstraint gen.ITableconstraintContext, tokens antlr.TokenStream) (*DDLPrimaryKey, []DDLForeignKey) {
+	if tableConstraint == nil || tableConstraint.Constraintelem() == nil {
+		return nil, nil
+	}
+
+	constraintName := createTableConstraintName(tableConstraint.Name(), tokens)
+	elem := tableConstraint.Constraintelem()
+
+	var primaryKey *DDLPrimaryKey
+	if elem.PRIMARY() != nil && elem.KEY() != nil && elem.Columnlist() != nil {
+		cols := extractCreateTableColumnNames(elem.Columnlist(), tokens)
+		if len(cols) > 0 {
+			primaryKey = &DDLPrimaryKey{
+				ConstraintName: constraintName,
+				Columns:        cols,
+			}
+		}
+	}
+
+	var foreignKeys []DDLForeignKey
+	if elem.FOREIGN() != nil && elem.KEY() != nil && elem.REFERENCES() != nil && elem.Qualified_name() != nil {
+		foreignKeys = append(foreignKeys, createTableForeignKeyFromReference(
+			constraintName,
+			extractCreateTableColumnNames(elem.Columnlist(), tokens),
+			elem.Qualified_name(),
+			elem.Column_list_(),
+			tokens,
+		))
+	}
+
+	if len(foreignKeys) == 0 {
+		return primaryKey, nil
+	}
+	return primaryKey, foreignKeys
+}
+
+// createTableForeignKeyFromReference builds a DDL foreign key payload from a
+// REFERENCES target and optional referenced column list.
+func createTableForeignKeyFromReference(
+	constraintName string,
+	columns []string,
+	referencedTable gen.IQualified_nameContext,
+	referencedColumns gen.IColumn_list_Context,
+	tokens antlr.TokenStream,
+) DDLForeignKey {
+	refRaw := ""
+	if referencedTable != nil {
+		if prc, ok := referencedTable.(antlr.ParserRuleContext); ok {
+			refRaw = strings.TrimSpace(ctxText(tokens, prc))
+		}
+		if refRaw == "" {
+			refRaw = strings.TrimSpace(referencedTable.GetText())
+		}
+	}
+	refSchema, refTable := splitQualifiedName(refRaw)
+
+	return DDLForeignKey{
+		ConstraintName:    constraintName,
+		Columns:           append([]string(nil), columns...),
+		ReferencesSchema:  refSchema,
+		ReferencesTable:   refTable,
+		ReferencesColumns: extractCreateTableColumnNamesFromList(referencedColumns, tokens),
+	}
+}
+
+// createTableConstraintName returns the optional name on a CREATE TABLE
+// constraint clause.
+func createTableConstraintName(name gen.INameContext, tokens antlr.TokenStream) string {
+	if name == nil {
+		return ""
+	}
+	if prc, ok := name.(antlr.ParserRuleContext); ok {
+		return strings.TrimSpace(ctxText(tokens, prc))
+	}
+	return strings.TrimSpace(name.GetText())
+}
+
+// createTablePrimaryKeyColumnSet normalizes PK columns for nullable resolution.
+func createTablePrimaryKeyColumnSet(primaryKey *DDLPrimaryKey) map[string]struct{} {
+	if primaryKey == nil || len(primaryKey.Columns) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(primaryKey.Columns))
+	for _, col := range primaryKey.Columns {
+		normalized := normalizeCreateTableColumnName(col)
+		if normalized == "" {
+			continue
+		}
+		out[normalized] = struct{}{}
+	}
+	return out
+}
+
+// extractCreateTableColumnNames extracts identifier text from a column list.
+func extractCreateTableColumnNames(columnList gen.IColumnlistContext, tokens antlr.TokenStream) []string {
+	if columnList == nil {
+		return nil
+	}
+	elems := columnList.AllColumnElem()
+	if len(elems) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, len(elems))
+	for _, colElem := range elems {
+		if colElem == nil || colElem.Colid() == nil {
+			continue
+		}
+		colName := ""
+		if prc, ok := colElem.Colid().(antlr.ParserRuleContext); ok {
+			colName = strings.TrimSpace(ctxText(tokens, prc))
+		}
+		if colName == "" {
+			colName = strings.TrimSpace(colElem.Colid().GetText())
+		}
+		if colName != "" {
+			out = append(out, colName)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// extractCreateTableColumnNamesFromList extracts identifier text from a
+// parenthesized optional column list.
+func extractCreateTableColumnNamesFromList(columnList gen.IColumn_list_Context, tokens antlr.TokenStream) []string {
+	if columnList == nil || columnList.Columnlist() == nil {
+		return nil
+	}
+	return extractCreateTableColumnNames(columnList.Columnlist(), tokens)
 }
 
 // collectCreateTablePrimaryKeyColumns extracts column names referenced by table-level PRIMARY KEY constraints.
