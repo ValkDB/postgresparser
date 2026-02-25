@@ -2,9 +2,10 @@
 package analysis
 
 import (
-	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/valkdb/postgresparser"
 )
 
@@ -416,23 +417,14 @@ func TestAnalyzeSQL_DDL_CreateTable(t *testing.T) {
 		{Name: "created_at", Type: "timestamp without time zone", Nullable: false, Default: "CURRENT_TIMESTAMP"},
 	}
 	for i := range want {
-		if !reflect.DeepEqual(act.ColumnDetails[i], want[i]) {
-			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
-		}
+		assert.Equal(t, want[i], act.ColumnDetails[i], "column detail %d mismatch", i)
 	}
-	if act.PrimaryKey != nil {
-		t.Fatalf("expected no primary key metadata, got %+v", act.PrimaryKey)
-	}
-	if len(act.ForeignKeys) != 0 {
-		t.Fatalf("expected no foreign key metadata, got %+v", act.ForeignKeys)
-	}
+	assert.Nil(t, act.PrimaryKey, "expected no primary key metadata")
+	assert.Empty(t, act.ForeignKeys, "expected no foreign key metadata")
 
-	if len(res.Tables) != 1 {
-		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
-	}
-	if res.Tables[0].Schema != "public" || res.Tables[0].Name != "users" {
-		t.Fatalf("expected table public.users, got %+v", res.Tables[0])
-	}
+	require.Len(t, res.Tables, 1, "tables count mismatch")
+	assert.Equal(t, "public", res.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "users", res.Tables[0].Name, "table name mismatch")
 }
 
 func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse(t *testing.T) {
@@ -469,30 +461,19 @@ func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse(t *testing.
 		{Name: "tenant_id", Type: "integer", Nullable: false},
 		{Name: "payload", Type: "text", Nullable: true},
 	}
-	if len(act.ColumnDetails) != len(want) {
-		t.Fatalf("expected %d column details, got %d: %+v", len(want), len(act.ColumnDetails), act.ColumnDetails)
-	}
+	require.Len(t, act.ColumnDetails, len(want), "column details count mismatch")
 	for i := range want {
-		if !reflect.DeepEqual(act.ColumnDetails[i], want[i]) {
-			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
-		}
+		assert.Equal(t, want[i], act.ColumnDetails[i], "column detail %d mismatch", i)
 	}
-	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+	assert.Equal(t, &SQLDDLPrimaryKey{
 		ConstraintName: "accounts_pk",
 		Columns:        []string{"id", "tenant_id"},
-	}) {
-		t.Fatalf("primary key mismatch: got %+v", act.PrimaryKey)
-	}
-	if len(act.ForeignKeys) != 0 {
-		t.Fatalf("expected no foreign key metadata, got %+v", act.ForeignKeys)
-	}
+	}, act.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.ForeignKeys, "expected no foreign key metadata")
 
-	if len(res.Tables) != 1 {
-		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
-	}
-	if res.Tables[0].Schema != "public" || res.Tables[0].Name != "accounts" {
-		t.Fatalf("expected table public.accounts, got %+v", res.Tables[0])
-	}
+	require.Len(t, res.Tables, 1, "tables count mismatch")
+	assert.Equal(t, "public", res.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "accounts", res.Tables[0].Name, "table name mismatch")
 }
 
 func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse_NoSchema(t *testing.T) {
@@ -529,29 +510,18 @@ func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse_NoSchema(t 
 		{Name: "tenant_id", Type: "integer", Nullable: false},
 		{Name: "payload", Type: "text", Nullable: true},
 	}
-	if len(act.ColumnDetails) != len(want) {
-		t.Fatalf("expected %d column details, got %d: %+v", len(want), len(act.ColumnDetails), act.ColumnDetails)
-	}
+	require.Len(t, act.ColumnDetails, len(want), "column details count mismatch")
 	for i := range want {
-		if !reflect.DeepEqual(act.ColumnDetails[i], want[i]) {
-			t.Fatalf("column detail %d mismatch: got %+v want %+v", i, act.ColumnDetails[i], want[i])
-		}
+		assert.Equal(t, want[i], act.ColumnDetails[i], "column detail %d mismatch", i)
 	}
-	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+	assert.Equal(t, &SQLDDLPrimaryKey{
 		Columns: []string{"id", "tenant_id"},
-	}) {
-		t.Fatalf("primary key mismatch: got %+v", act.PrimaryKey)
-	}
-	if len(act.ForeignKeys) != 0 {
-		t.Fatalf("expected no foreign key metadata, got %+v", act.ForeignKeys)
-	}
+	}, act.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.ForeignKeys, "expected no foreign key metadata")
 
-	if len(res.Tables) != 1 {
-		t.Fatalf("expected 1 table, got %d: %+v", len(res.Tables), res.Tables)
-	}
-	if res.Tables[0].Schema != "" || res.Tables[0].Name != "accounts" {
-		t.Fatalf("expected table accounts with empty schema, got %+v", res.Tables[0])
-	}
+	require.Len(t, res.Tables, 1, "tables count mismatch")
+	assert.Empty(t, res.Tables[0].Schema, "table schema mismatch")
+	assert.Equal(t, "accounts", res.Tables[0].Name, "table name mismatch")
 }
 
 func TestAnalyzeSQL_DDL_CreateTable_Relationships_TableConstraints(t *testing.T) {
@@ -565,24 +535,16 @@ func TestAnalyzeSQL_DDL_CreateTable_Relationships_TableConstraints(t *testing.T)
     CONSTRAINT users_branch_fk FOREIGN KEY (region, branch_id) REFERENCES public.branches(region, branch_id)
 );`
 	res, err := AnalyzeSQL(sql)
-	if err != nil {
-		t.Fatalf("AnalyzeSQL failed: %v", err)
-	}
-	if res.Command != SQLCommandDDL {
-		t.Fatalf("expected DDL command, got %s", res.Command)
-	}
-	if len(res.DDLActions) != 1 {
-		t.Fatalf("expected 1 DDL action, got %d: %+v", len(res.DDLActions), res.DDLActions)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, SQLCommandDDL, res.Command, "expected DDL command")
+	require.Len(t, res.DDLActions, 1, "action count mismatch")
 
 	act := res.DDLActions[0]
-	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+	assert.Equal(t, &SQLDDLPrimaryKey{
 		ConstraintName: "users_pk",
 		Columns:        []string{"id"},
-	}) {
-		t.Fatalf("primary key mismatch: got %+v", act.PrimaryKey)
-	}
-	wantFKs := []SQLDDLForeignKey{
+	}, act.PrimaryKey, "primary key mismatch")
+	assert.Equal(t, []SQLDDLForeignKey{
 		{
 			ConstraintName:    "users_org_fk",
 			Columns:           []string{"org_id"},
@@ -597,16 +559,9 @@ func TestAnalyzeSQL_DDL_CreateTable_Relationships_TableConstraints(t *testing.T)
 			ReferencesTable:   "branches",
 			ReferencesColumns: []string{"region", "branch_id"},
 		},
-	}
-	if !reflect.DeepEqual(act.ForeignKeys, wantFKs) {
-		t.Fatalf("foreign keys mismatch: got %+v want %+v", act.ForeignKeys, wantFKs)
-	}
-	if len(act.ColumnDetails) != 4 {
-		t.Fatalf("expected 4 column details, got %d", len(act.ColumnDetails))
-	}
-	if !reflect.DeepEqual(act.ColumnDetails[0], SQLDDLColumn{Name: "id", Type: "integer", Nullable: false}) {
-		t.Fatalf("id column mismatch: got %+v", act.ColumnDetails[0])
-	}
+	}, act.ForeignKeys, "foreign keys mismatch")
+	require.Len(t, act.ColumnDetails, 4, "column details count mismatch")
+	assert.Equal(t, SQLDDLColumn{Name: "id", Type: "integer", Nullable: false}, act.ColumnDetails[0], "id column mismatch")
 }
 
 func TestAnalyzeSQL_DDL_CreateTable_Relationships_InlineConstraints(t *testing.T) {
@@ -616,23 +571,15 @@ func TestAnalyzeSQL_DDL_CreateTable_Relationships_InlineConstraints(t *testing.T
     branch_id integer REFERENCES branches(id)
 );`
 	res, err := AnalyzeSQL(sql)
-	if err != nil {
-		t.Fatalf("AnalyzeSQL failed: %v", err)
-	}
-	if res.Command != SQLCommandDDL {
-		t.Fatalf("expected DDL command, got %s", res.Command)
-	}
-	if len(res.DDLActions) != 1 {
-		t.Fatalf("expected 1 DDL action, got %d: %+v", len(res.DDLActions), res.DDLActions)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, SQLCommandDDL, res.Command, "expected DDL command")
+	require.Len(t, res.DDLActions, 1, "action count mismatch")
 
 	act := res.DDLActions[0]
-	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+	assert.Equal(t, &SQLDDLPrimaryKey{
 		Columns: []string{"id"},
-	}) {
-		t.Fatalf("primary key mismatch: got %+v", act.PrimaryKey)
-	}
-	wantFKs := []SQLDDLForeignKey{
+	}, act.PrimaryKey, "primary key mismatch")
+	assert.Equal(t, []SQLDDLForeignKey{
 		{
 			ConstraintName:    "memberships_org_fk",
 			Columns:           []string{"org_id"},
@@ -645,16 +592,52 @@ func TestAnalyzeSQL_DDL_CreateTable_Relationships_InlineConstraints(t *testing.T
 			ReferencesTable:   "branches",
 			ReferencesColumns: []string{"id"},
 		},
-	}
-	if !reflect.DeepEqual(act.ForeignKeys, wantFKs) {
-		t.Fatalf("foreign keys mismatch: got %+v want %+v", act.ForeignKeys, wantFKs)
-	}
-	if len(act.ColumnDetails) != 3 {
-		t.Fatalf("expected 3 column details, got %d", len(act.ColumnDetails))
-	}
-	if !reflect.DeepEqual(act.ColumnDetails[0], SQLDDLColumn{Name: "id", Type: "integer", Nullable: false}) {
-		t.Fatalf("id column mismatch: got %+v", act.ColumnDetails[0])
-	}
+	}, act.ForeignKeys, "foreign keys mismatch")
+	require.Len(t, act.ColumnDetails, 3, "column details count mismatch")
+	assert.Equal(t, SQLDDLColumn{Name: "id", Type: "integer", Nullable: false}, act.ColumnDetails[0], "id column mismatch")
+}
+
+func TestAnalyzeSQL_DDL_CreateTable_UniqueConstraints(t *testing.T) {
+	sql := `CREATE TABLE public.users (
+    id integer PRIMARY KEY,
+    email text UNIQUE,
+    code text,
+    region text,
+    CONSTRAINT users_code_region_uniq UNIQUE (code, region)
+);`
+	res, err := AnalyzeSQL(sql)
+	require.NoError(t, err)
+	assert.Equal(t, SQLCommandDDL, res.Command, "expected DDL command")
+	require.Len(t, res.DDLActions, 1)
+
+	act := res.DDLActions[0]
+	assert.Equal(t, []SQLDDLUniqueConstraint{
+		{Columns: []string{"email"}},
+		{ConstraintName: "users_code_region_uniq", Columns: []string{"code", "region"}},
+	}, act.UniqueKeys, "unique keys mismatch")
+	assert.NotNil(t, act.PrimaryKey)
+}
+
+func TestAnalyzeSQL_DDL_CreateTable_CheckConstraints(t *testing.T) {
+	sql := `CREATE TABLE public.products (
+    id integer PRIMARY KEY,
+    price numeric CONSTRAINT positive_price CHECK (price > 0),
+    quantity integer CHECK (quantity >= 0),
+    CONSTRAINT valid_margin CHECK (price > quantity)
+);`
+	res, err := AnalyzeSQL(sql)
+	require.NoError(t, err)
+	assert.Equal(t, SQLCommandDDL, res.Command, "expected DDL command")
+	require.Len(t, res.DDLActions, 1)
+
+	act := res.DDLActions[0]
+	require.Len(t, act.CheckConstraints, 3, "check constraint count mismatch")
+	assert.Equal(t, "positive_price", act.CheckConstraints[0].ConstraintName)
+	assert.Equal(t, "price > 0", act.CheckConstraints[0].Expression)
+	assert.Empty(t, act.CheckConstraints[1].ConstraintName)
+	assert.Equal(t, "quantity >= 0", act.CheckConstraints[1].Expression)
+	assert.Equal(t, "valid_margin", act.CheckConstraints[2].ConstraintName)
+	assert.Equal(t, "price > quantity", act.CheckConstraints[2].Expression)
 }
 
 func TestAnalyzeSQL_DDL_CreateTableTypeCoverage(t *testing.T) {
@@ -917,9 +900,7 @@ func TestAnalyzeSQL_DDL_CommentOn_Table(t *testing.T) {
 			if act.Target != tc.wantTarget {
 				t.Fatalf("expected target %q, got %q", tc.wantTarget, act.Target)
 			}
-			if !reflect.DeepEqual(act.Columns, tc.wantColumns) {
-				t.Fatalf("expected columns %+v, got %+v", tc.wantColumns, act.Columns)
-			}
+			assert.Equal(t, tc.wantColumns, act.Columns, "columns mismatch")
 			if act.Comment != tc.wantComment {
 				t.Fatalf("comment mismatch: got %q want %q", act.Comment, tc.wantComment)
 			}
@@ -1018,9 +999,7 @@ func TestAnalyzeSQL_DDL_CreateTableFieldComments_Table(t *testing.T) {
 				t.Fatalf("expected 1 DDL action, got %d", len(res.DDLActions))
 			}
 			got := commentsByName(res.DDLActions[0].ColumnDetails)
-			if !reflect.DeepEqual(got, tc.wantCommentsByCol) {
-				t.Fatalf("unexpected comments by column: got=%v want=%v", got, tc.wantCommentsByCol)
-			}
+			assert.Equal(t, tc.wantCommentsByCol, got, "comments by column mismatch")
 		})
 	}
 }
@@ -1146,29 +1125,18 @@ func TestAnalyzeSQL_DDL_AlterTableOnlySchemaQualifiedTableRef(t *testing.T) {
 		t.Fatalf("expected raw table text with ONLY, got %q", res.Tables[0].Raw)
 	}
 
-	if len(res.DDLActions) != 1 {
-		t.Fatalf("expected 1 DDL action for ADD CONSTRAINT, got %+v", res.DDLActions)
-	}
+	require.Len(t, res.DDLActions, 1, "action count mismatch")
 	act := res.DDLActions[0]
-	if act.Type != "ALTER_TABLE" {
-		t.Fatalf("expected ALTER_TABLE, got %s", act.Type)
-	}
+	assert.Equal(t, "ALTER_TABLE", act.Type, "action type mismatch")
 	assertAnalysisFlag(t, act.Flags, "ADD_CONSTRAINT")
-	if act.Schema != "public" || act.ObjectName != "schema_migrations" {
-		t.Fatalf("unexpected action target: %+v", act)
-	}
-	if !reflect.DeepEqual(act.Columns, []string{"version"}) {
-		t.Fatalf("constrained columns mismatch: %v", act.Columns)
-	}
-	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+	assert.Equal(t, "public", act.Schema, "action schema mismatch")
+	assert.Equal(t, "schema_migrations", act.ObjectName, "action object mismatch")
+	assert.Equal(t, []string{"version"}, act.Columns, "constrained columns mismatch")
+	assert.Equal(t, &SQLDDLPrimaryKey{
 		ConstraintName: "schema_migrations_pkey",
 		Columns:        []string{"version"},
-	}) {
-		t.Fatalf("primary key mismatch: %+v", act.PrimaryKey)
-	}
-	if len(act.ForeignKeys) != 0 {
-		t.Fatalf("expected no foreign keys, got %+v", act.ForeignKeys)
-	}
+	}, act.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.ForeignKeys, "expected no foreign keys")
 }
 
 func TestAnalyzeSQL_DDL_AlterTableOnlyUnqualifiedTableRef(t *testing.T) {
@@ -1191,59 +1159,36 @@ func TestAnalyzeSQL_DDL_AlterTableOnlyUnqualifiedTableRef(t *testing.T) {
 		t.Fatalf("expected raw table text with ONLY, got %q", res.Tables[0].Raw)
 	}
 
-	if len(res.DDLActions) != 1 {
-		t.Fatalf("expected 1 DDL action for ADD CONSTRAINT, got %+v", res.DDLActions)
-	}
+	require.Len(t, res.DDLActions, 1, "action count mismatch")
 	act := res.DDLActions[0]
-	if act.Type != "ALTER_TABLE" {
-		t.Fatalf("expected ALTER_TABLE, got %s", act.Type)
-	}
+	assert.Equal(t, "ALTER_TABLE", act.Type, "action type mismatch")
 	assertAnalysisFlag(t, act.Flags, "ADD_CONSTRAINT")
-	if act.Schema != "" || act.ObjectName != "schema_migrations" {
-		t.Fatalf("unexpected action target: %+v", act)
-	}
-	if !reflect.DeepEqual(act.Columns, []string{"version"}) {
-		t.Fatalf("constrained columns mismatch: %v", act.Columns)
-	}
-	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+	assert.Empty(t, act.Schema, "action schema mismatch")
+	assert.Equal(t, "schema_migrations", act.ObjectName, "action object mismatch")
+	assert.Equal(t, []string{"version"}, act.Columns, "constrained columns mismatch")
+	assert.Equal(t, &SQLDDLPrimaryKey{
 		ConstraintName: "schema_migrations_pkey",
 		Columns:        []string{"version"},
-	}) {
-		t.Fatalf("primary key mismatch: %+v", act.PrimaryKey)
-	}
-	if len(act.ForeignKeys) != 0 {
-		t.Fatalf("expected no foreign keys, got %+v", act.ForeignKeys)
-	}
+	}, act.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.ForeignKeys, "expected no foreign keys")
 }
 
 func TestAnalyzeSQL_DDL_AlterTableAddConstraintForeignKey(t *testing.T) {
 	sql := `ALTER TABLE public.users
     ADD CONSTRAINT users_org_fk FOREIGN KEY (org_id) REFERENCES public.organizations(id);`
 	res, err := AnalyzeSQL(sql)
-	if err != nil {
-		t.Fatalf("AnalyzeSQL failed: %v", err)
-	}
-	if res.Command != SQLCommandDDL {
-		t.Fatalf("expected DDL command, got %s", res.Command)
-	}
-	if len(res.DDLActions) != 1 {
-		t.Fatalf("expected 1 DDL action, got %d: %+v", len(res.DDLActions), res.DDLActions)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, SQLCommandDDL, res.Command, "expected DDL command")
+	require.Len(t, res.DDLActions, 1, "action count mismatch")
+
 	act := res.DDLActions[0]
-	if act.Type != "ALTER_TABLE" {
-		t.Fatalf("expected ALTER_TABLE, got %s", act.Type)
-	}
+	assert.Equal(t, "ALTER_TABLE", act.Type, "action type mismatch")
 	assertAnalysisFlag(t, act.Flags, "ADD_CONSTRAINT")
-	if act.Schema != "public" || act.ObjectName != "users" {
-		t.Fatalf("unexpected action target: %+v", act)
-	}
-	if !reflect.DeepEqual(act.Columns, []string{"org_id"}) {
-		t.Fatalf("constrained columns mismatch: %v", act.Columns)
-	}
-	if act.PrimaryKey != nil {
-		t.Fatalf("expected nil primary key, got %+v", act.PrimaryKey)
-	}
-	wantFKs := []SQLDDLForeignKey{
+	assert.Equal(t, "public", act.Schema, "action schema mismatch")
+	assert.Equal(t, "users", act.ObjectName, "action object mismatch")
+	assert.Equal(t, []string{"org_id"}, act.Columns, "constrained columns mismatch")
+	assert.Nil(t, act.PrimaryKey, "expected nil primary key")
+	assert.Equal(t, []SQLDDLForeignKey{
 		{
 			ConstraintName:    "users_org_fk",
 			Columns:           []string{"org_id"},
@@ -1251,10 +1196,7 @@ func TestAnalyzeSQL_DDL_AlterTableAddConstraintForeignKey(t *testing.T) {
 			ReferencesTable:   "organizations",
 			ReferencesColumns: []string{"id"},
 		},
-	}
-	if !reflect.DeepEqual(act.ForeignKeys, wantFKs) {
-		t.Fatalf("foreign keys mismatch: got %+v want %+v", act.ForeignKeys, wantFKs)
-	}
+	}, act.ForeignKeys, "foreign keys mismatch")
 }
 
 // TestAnalyzeSQL_DDL_AlterTableMultiAction checks ALTER TABLE with combined ADD and DROP actions.

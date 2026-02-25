@@ -5,11 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/valkdb/postgresparser/gen"
 )
 
 // parseAssertNoError parses SQL and fails the test if an error occurs.
@@ -89,34 +86,33 @@ func TestNormalizeCreateTableColumnName(t *testing.T) {
 	}
 }
 
-func TestCollectCreateTablePrimaryKeyColumns(t *testing.T) {
-	t.Run("empty and nil elements", func(t *testing.T) {
-		assert.Empty(t, collectCreateTablePrimaryKeyColumns(nil))
-		assert.Empty(t, collectCreateTablePrimaryKeyColumns([]gen.ITableelementContext{nil}))
+func TestCreateTablePrimaryKeyColumnSet(t *testing.T) {
+	t.Run("nil primary key", func(t *testing.T) {
+		assert.Empty(t, createTablePrimaryKeyColumnSet(nil))
 	})
 
-	t.Run("collects only table level primary key columns", func(t *testing.T) {
-		sql := `CREATE TABLE public.accounts (
-    "ID" integer,
-    tenant_id integer,
-    code text,
-    UNIQUE (code),
-    PRIMARY KEY ("ID", tenant_id)
-);`
-		tableElems := parseCreateTableElements(t, sql)
-		pkCols := collectCreateTablePrimaryKeyColumns(tableElems)
+	t.Run("empty columns", func(t *testing.T) {
+		assert.Empty(t, createTablePrimaryKeyColumnSet(&DDLPrimaryKey{}))
+	})
 
-		assert.Len(t, pkCols, 2)
+	t.Run("normalizes quoted and unquoted columns", func(t *testing.T) {
+		pk := &DDLPrimaryKey{
+			ConstraintName: "accounts_pk",
+			Columns:        []string{`"ID"`, "tenant_id", "Uppercase"},
+		}
+		pkCols := createTablePrimaryKeyColumnSet(pk)
+
+		assert.Len(t, pkCols, 3)
 		_, hasQuoted := pkCols["ID"]
-		assert.True(t, hasQuoted, "expected quoted PK column to be present")
+		assert.True(t, hasQuoted, "expected quoted PK column to preserve case")
 		_, hasUnquoted := pkCols["tenant_id"]
-		assert.True(t, hasUnquoted, "expected unquoted PK column to be present")
-		_, hasUniqueOnly := pkCols["code"]
-		assert.False(t, hasUniqueOnly, "expected UNIQUE-only column to be absent")
+		assert.True(t, hasUnquoted, "expected unquoted PK column to be lowercased")
+		_, hasUppercase := pkCols["uppercase"]
+		assert.True(t, hasUppercase, "expected unquoted uppercase PK column to be lowercased")
 	})
 }
 
-func TestExtractCreateTableRelationships(t *testing.T) {
+func TestExtractCreateTableConstraints(t *testing.T) {
 	sql := `CREATE TABLE public.users (
     id integer,
     org_id integer CONSTRAINT users_org_fk REFERENCES public.organizations(id),
@@ -136,12 +132,12 @@ func TestExtractCreateTableRelationships(t *testing.T) {
 	require.NotNil(t, createStmt.Opttableelementlist().Tableelementlist())
 	tableElems := createStmt.Opttableelementlist().Tableelementlist().AllTableelement()
 
-	pk, fks := extractCreateTableRelationships(tableElems, state.stream)
-	require.NotNil(t, pk)
+	constraints := extractCreateTableConstraints(tableElems, state.stream)
+	require.NotNil(t, constraints.PrimaryKey)
 	assert.Equal(t, &DDLPrimaryKey{
 		ConstraintName: "users_pk",
 		Columns:        []string{"id"},
-	}, pk)
+	}, constraints.PrimaryKey)
 	assert.Equal(t, []DDLForeignKey{
 		{
 			ConstraintName:    "users_org_fk",
@@ -157,7 +153,9 @@ func TestExtractCreateTableRelationships(t *testing.T) {
 			ReferencesTable:   "branches",
 			ReferencesColumns: []string{"region", "branch_id"},
 		},
-	}, fks)
+	}, constraints.ForeignKeys)
+	assert.Empty(t, constraints.UniqueKeys)
+	assert.Empty(t, constraints.CheckConstraints)
 }
 
 func TestCollectAlterTableConstraintColumns(t *testing.T) {
@@ -171,33 +169,6 @@ func TestCollectAlterTableConstraintColumns(t *testing.T) {
 
 	got := collectAlterTableConstraintColumns(pk, fks)
 	assert.Equal(t, []string{"id", `"CaseSensitive"`, "org_id", "branch_id"}, got)
-}
-
-// parseCreateTableElements returns CREATE TABLE table elements for helper-level DDL extraction tests.
-func parseCreateTableElements(t *testing.T, sql string) []gen.ITableelementContext {
-	t.Helper()
-
-	input := antlr.NewInputStream(sql)
-	lexer := gen.NewPostgreSQLLexer(input)
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
-	parser := gen.NewPostgreSQLParser(stream)
-	parser.BuildParseTrees = true
-
-	root := parser.Root()
-	require.NotNil(t, root, "expected non-nil parser root")
-	require.NotNil(t, root.Stmtblock(), "expected stmtblock")
-	stmtMulti := root.Stmtblock().Stmtmulti()
-	require.NotNil(t, stmtMulti, "expected stmtmulti")
-
-	stmts := stmtMulti.AllStmt()
-	require.Len(t, stmts, 1, "expected exactly one statement")
-
-	createStmt := stmts[0].Createstmt()
-	require.NotNil(t, createStmt, "expected CREATE statement")
-	require.NotNil(t, createStmt.Opttableelementlist(), "expected table element list")
-	require.NotNil(t, createStmt.Opttableelementlist().Tableelementlist(), "expected table elements")
-
-	return createStmt.Opttableelementlist().Tableelementlist().AllTableelement()
 }
 
 // normalise collapses whitespace and lowercases strings for comparison convenience.

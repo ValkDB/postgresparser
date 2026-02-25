@@ -54,7 +54,11 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 		tableElems := optElems.Tableelementlist().AllTableelement()
 		action.Columns = make([]string, 0, len(tableElems))
 		action.ColumnDetails = make([]DDLColumn, 0, len(tableElems))
-		action.PrimaryKey, action.ForeignKeys = extractCreateTableRelationships(tableElems, tokens)
+		constraints := extractCreateTableConstraints(tableElems, tokens)
+		action.PrimaryKey = constraints.PrimaryKey
+		action.ForeignKeys = constraints.ForeignKeys
+		action.UniqueKeys = constraints.UniqueKeys
+		action.CheckConstraints = constraints.CheckConstraints
 		primaryKeyCols := createTablePrimaryKeyColumnSet(action.PrimaryKey)
 		var fieldCommentsByColumn map[string][]string
 		if opts.IncludeCreateTableFieldComments {
@@ -92,6 +96,9 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 		if prc, ok := colid.(antlr.ParserRuleContext); ok {
 			col.Name = strings.TrimSpace(ctxText(tokens, prc))
 		}
+		if col.Name == "" {
+			col.Name = strings.TrimSpace(colid.GetText())
+		}
 	}
 	if normalized := normalizeCreateTableColumnName(col.Name); normalized != "" {
 		if lines, ok := fieldCommentsByColumn[normalized]; ok {
@@ -127,17 +134,32 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 	return col
 }
 
-// extractCreateTableRelationships extracts CREATE TABLE PK/FK metadata from
-// inline and table-level constraints.
-func extractCreateTableRelationships(tableElems []gen.ITableelementContext, tokens antlr.TokenStream) (*DDLPrimaryKey, []DDLForeignKey) {
-	if len(tableElems) == 0 {
-		return nil, nil
-	}
+// tableConstraints bundles constraint metadata extracted from CREATE TABLE or
+// ALTER TABLE ... ADD CONSTRAINT.
+type tableConstraints struct {
+	PrimaryKey       *DDLPrimaryKey
+	ForeignKeys      []DDLForeignKey
+	UniqueKeys       []DDLUniqueConstraint
+	CheckConstraints []DDLCheckConstraint
+}
 
-	var (
-		primaryKey  *DDLPrimaryKey
-		foreignKeys []DDLForeignKey
-	)
+func (tc *tableConstraints) merge(other tableConstraints) {
+	// If multiple PRIMARY KEY declarations exist (invalid SQL), the first one wins.
+	if tc.PrimaryKey == nil && other.PrimaryKey != nil {
+		tc.PrimaryKey = other.PrimaryKey
+	}
+	tc.ForeignKeys = append(tc.ForeignKeys, other.ForeignKeys...)
+	tc.UniqueKeys = append(tc.UniqueKeys, other.UniqueKeys...)
+	tc.CheckConstraints = append(tc.CheckConstraints, other.CheckConstraints...)
+}
+
+// extractCreateTableConstraints extracts CREATE TABLE PK/FK/UNIQUE/CHECK
+// metadata from inline and table-level constraints.
+func extractCreateTableConstraints(tableElems []gen.ITableelementContext, tokens antlr.TokenStream) tableConstraints {
+	var out tableConstraints
+	if len(tableElems) == 0 {
+		return out
+	}
 
 	for _, tableElem := range tableElems {
 		if tableElem == nil {
@@ -145,38 +167,24 @@ func extractCreateTableRelationships(tableElems []gen.ITableelementContext, toke
 		}
 
 		if colDef := tableElem.ColumnDef(); colDef != nil {
-			colPK, colFKs := extractCreateTableColumnRelationships(colDef, tokens)
-			if primaryKey == nil && colPK != nil {
-				primaryKey = colPK
-			}
-			if len(colFKs) > 0 {
-				foreignKeys = append(foreignKeys, colFKs...)
-			}
+			out.merge(extractCreateTableColumnConstraints(colDef, tokens))
 			continue
 		}
 
-		if tableConstraint := tableElem.Tableconstraint(); tableConstraint != nil {
-			tablePK, tableFKs := extractCreateTableTableConstraintRelationships(tableConstraint, tokens)
-			if primaryKey == nil && tablePK != nil {
-				primaryKey = tablePK
-			}
-			if len(tableFKs) > 0 {
-				foreignKeys = append(foreignKeys, tableFKs...)
-			}
+		if tc := tableElem.Tableconstraint(); tc != nil {
+			out.merge(extractCreateTableTableConstraint(tc, tokens))
 		}
 	}
 
-	if len(foreignKeys) == 0 {
-		return primaryKey, nil
-	}
-	return primaryKey, foreignKeys
+	return out
 }
 
-// extractCreateTableColumnRelationships extracts PK/FK metadata from inline
-// column constraints.
-func extractCreateTableColumnRelationships(colDef gen.IColumnDefContext, tokens antlr.TokenStream) (*DDLPrimaryKey, []DDLForeignKey) {
+// extractCreateTableColumnConstraints extracts PK/FK/UNIQUE/CHECK metadata from
+// inline column constraints.
+func extractCreateTableColumnConstraints(colDef gen.IColumnDefContext, tokens antlr.TokenStream) tableConstraints {
+	var out tableConstraints
 	if colDef == nil || colDef.Colquallist() == nil {
-		return nil, nil
+		return out
 	}
 
 	colName := ""
@@ -189,13 +197,8 @@ func extractCreateTableColumnRelationships(colDef gen.IColumnDefContext, tokens 
 		}
 	}
 	if colName == "" {
-		return nil, nil
+		return out
 	}
-
-	var (
-		primaryKey  *DDLPrimaryKey
-		foreignKeys []DDLForeignKey
-	)
 
 	for _, constraint := range colDef.Colquallist().AllColconstraint() {
 		if constraint == nil || constraint.Colconstraintelem() == nil {
@@ -205,68 +208,92 @@ func extractCreateTableColumnRelationships(colDef gen.IColumnDefContext, tokens 
 		elem := constraint.Colconstraintelem()
 		constraintName := createTableConstraintName(constraint.Name(), tokens)
 
-		if primaryKey == nil && elem.PRIMARY() != nil && elem.KEY() != nil {
-			primaryKey = &DDLPrimaryKey{
+		if out.PrimaryKey == nil && elem.PRIMARY() != nil && elem.KEY() != nil {
+			out.PrimaryKey = &DDLPrimaryKey{
 				ConstraintName: constraintName,
 				Columns:        []string{colName},
 			}
 		}
 
-		if elem.REFERENCES() == nil || elem.Qualified_name() == nil {
-			continue
+		if elem.UNIQUE() != nil {
+			out.UniqueKeys = append(out.UniqueKeys, DDLUniqueConstraint{
+				ConstraintName: constraintName,
+				Columns:        []string{colName},
+			})
 		}
 
-		foreignKeys = append(foreignKeys, createTableForeignKeyFromReference(
-			constraintName,
-			[]string{colName},
-			elem.Qualified_name(),
-			elem.Column_list_(),
-			tokens,
-		))
+		if elem.CHECK() != nil {
+			out.CheckConstraints = append(out.CheckConstraints, DDLCheckConstraint{
+				ConstraintName: constraintName,
+				Expression:     extractCheckExpression(elem, tokens),
+			})
+		}
+
+		if elem.REFERENCES() != nil && elem.Qualified_name() != nil {
+			out.ForeignKeys = append(out.ForeignKeys, createTableForeignKeyFromReference(
+				constraintName,
+				[]string{colName},
+				elem.Qualified_name(),
+				elem.Column_list_(),
+				elem.Key_actions(),
+				tokens,
+			))
+		}
 	}
 
-	if len(foreignKeys) == 0 {
-		return primaryKey, nil
-	}
-	return primaryKey, foreignKeys
+	return out
 }
 
-// extractCreateTableTableConstraintRelationships extracts PK/FK metadata from
-// table-level constraints.
-func extractCreateTableTableConstraintRelationships(tableConstraint gen.ITableconstraintContext, tokens antlr.TokenStream) (*DDLPrimaryKey, []DDLForeignKey) {
+// extractCreateTableTableConstraint extracts PK/FK/UNIQUE/CHECK metadata from a
+// table-level constraint.
+func extractCreateTableTableConstraint(tableConstraint gen.ITableconstraintContext, tokens antlr.TokenStream) tableConstraints {
+	var out tableConstraints
 	if tableConstraint == nil || tableConstraint.Constraintelem() == nil {
-		return nil, nil
+		return out
 	}
 
 	constraintName := createTableConstraintName(tableConstraint.Name(), tokens)
 	elem := tableConstraint.Constraintelem()
 
-	var primaryKey *DDLPrimaryKey
 	if elem.PRIMARY() != nil && elem.KEY() != nil && elem.Columnlist() != nil {
 		cols := extractCreateTableColumnNames(elem.Columnlist(), tokens)
 		if len(cols) > 0 {
-			primaryKey = &DDLPrimaryKey{
+			out.PrimaryKey = &DDLPrimaryKey{
 				ConstraintName: constraintName,
 				Columns:        cols,
 			}
 		}
 	}
 
-	var foreignKeys []DDLForeignKey
+	if elem.UNIQUE() != nil && elem.Columnlist() != nil {
+		cols := extractCreateTableColumnNames(elem.Columnlist(), tokens)
+		if len(cols) > 0 {
+			out.UniqueKeys = append(out.UniqueKeys, DDLUniqueConstraint{
+				ConstraintName: constraintName,
+				Columns:        cols,
+			})
+		}
+	}
+
+	if elem.CHECK() != nil {
+		out.CheckConstraints = append(out.CheckConstraints, DDLCheckConstraint{
+			ConstraintName: constraintName,
+			Expression:     extractCheckExpression(elem, tokens),
+		})
+	}
+
 	if elem.FOREIGN() != nil && elem.KEY() != nil && elem.REFERENCES() != nil && elem.Qualified_name() != nil {
-		foreignKeys = append(foreignKeys, createTableForeignKeyFromReference(
+		out.ForeignKeys = append(out.ForeignKeys, createTableForeignKeyFromReference(
 			constraintName,
 			extractCreateTableColumnNames(elem.Columnlist(), tokens),
 			elem.Qualified_name(),
 			elem.Column_list_(),
+			elem.Key_actions(),
 			tokens,
 		))
 	}
 
-	if len(foreignKeys) == 0 {
-		return primaryKey, nil
-	}
-	return primaryKey, foreignKeys
+	return out
 }
 
 // createTableForeignKeyFromReference builds a DDL foreign key payload from a
@@ -276,6 +303,7 @@ func createTableForeignKeyFromReference(
 	columns []string,
 	referencedTable gen.IQualified_nameContext,
 	referencedColumns gen.IColumn_list_Context,
+	keyActions gen.IKey_actionsContext,
 	tokens antlr.TokenStream,
 ) DDLForeignKey {
 	refRaw := ""
@@ -288,14 +316,77 @@ func createTableForeignKeyFromReference(
 		}
 	}
 	refSchema, refTable := splitQualifiedName(refRaw)
+	onDelete, onUpdate := extractForeignKeyActions(keyActions)
 
 	return DDLForeignKey{
 		ConstraintName:    constraintName,
-		Columns:           append([]string(nil), columns...),
+		Columns:           columns, // All callers pass freshly-allocated slices.
 		ReferencesSchema:  refSchema,
 		ReferencesTable:   refTable,
 		ReferencesColumns: extractCreateTableColumnNamesFromList(referencedColumns, tokens),
+		OnDelete:          onDelete,
+		OnUpdate:          onUpdate,
 	}
+}
+
+// extractForeignKeyActions extracts ON DELETE / ON UPDATE action text from a key_actions node.
+func extractForeignKeyActions(keyActions gen.IKey_actionsContext) (onDelete, onUpdate FKAction) {
+	if keyActions == nil {
+		return "", ""
+	}
+	if del := keyActions.Key_delete(); del != nil {
+		onDelete = extractKeyActionText(del.Key_action())
+	}
+	if upd := keyActions.Key_update(); upd != nil {
+		onUpdate = extractKeyActionText(upd.Key_action())
+	}
+	return onDelete, onUpdate
+}
+
+// extractKeyActionText returns the referential action constant for a key_action node.
+func extractKeyActionText(action gen.IKey_actionContext) FKAction {
+	if action == nil {
+		return ""
+	}
+	if action.CASCADE() != nil {
+		return FKCascade
+	}
+	if action.SET() != nil && action.NULL_P() != nil {
+		return FKSetNull
+	}
+	if action.SET() != nil && action.DEFAULT() != nil {
+		return FKSetDefault
+	}
+	if action.RESTRICT() != nil {
+		return FKRestrict
+	}
+	if action.NO() != nil && action.ACTION() != nil {
+		return FKNoAction
+	}
+	return ""
+}
+
+// checkExpressionNode is an interface satisfied by both inline and table-level
+// constraint elements that contain a CHECK expression.
+type checkExpressionNode interface {
+	A_expr() gen.IA_exprContext
+}
+
+// extractCheckExpression returns the text of a CHECK (...) expression.
+func extractCheckExpression(node checkExpressionNode, tokens antlr.TokenStream) string {
+	if node == nil {
+		return ""
+	}
+	aExpr := node.A_expr()
+	if aExpr == nil {
+		return ""
+	}
+	if prc, ok := aExpr.(antlr.ParserRuleContext); ok {
+		if txt := strings.TrimSpace(ctxText(tokens, prc)); txt != "" {
+			return txt
+		}
+	}
+	return strings.TrimSpace(aExpr.GetText())
 }
 
 // createTableConstraintName returns the optional name on a CREATE TABLE
@@ -365,24 +456,6 @@ func extractCreateTableColumnNamesFromList(columnList gen.IColumn_list_Context, 
 		return nil
 	}
 	return extractCreateTableColumnNames(columnList.Columnlist(), tokens)
-}
-
-// collectCreateTablePrimaryKeyColumns extracts column names referenced by table-level PRIMARY KEY constraints.
-func collectCreateTablePrimaryKeyColumns(tableElems []gen.ITableelementContext) map[string]struct{} {
-	pkCols := make(map[string]struct{}, len(tableElems))
-	for _, tableElem := range tableElems {
-		if tableElem == nil || tableElem.Tableconstraint() == nil {
-			continue
-		}
-		constraint := tableElem.Tableconstraint().Constraintelem()
-		if constraint == nil || constraint.PRIMARY() == nil || constraint.KEY() == nil || constraint.Columnlist() == nil {
-			continue
-		}
-		for _, colElem := range constraint.Columnlist().AllColumnElem() {
-			pkCols[normalizeCreateTableColumnName(colElem.Colid().GetText())] = struct{}{}
-		}
-	}
-	return pkCols
 }
 
 // normalizeCreateTableColumnName keeps PostgreSQL identifier semantics for matching:
@@ -558,22 +631,25 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 
 	case cmd.ADD_P() != nil:
 		if tableConstraint := cmd.Tableconstraint(); tableConstraint != nil {
-			primaryKey, foreignKeys := extractCreateTableTableConstraintRelationships(tableConstraint, tokens)
-			if primaryKey == nil && len(foreignKeys) == 0 {
-				// Ignore unsupported ADD CONSTRAINT kinds (CHECK/UNIQUE/EXCLUDE).
+			constraints := extractCreateTableTableConstraint(tableConstraint, tokens)
+			if constraints.PrimaryKey == nil && len(constraints.ForeignKeys) == 0 &&
+				len(constraints.UniqueKeys) == 0 && len(constraints.CheckConstraints) == 0 {
+				// Ignore unsupported ADD CONSTRAINT kinds (EXCLUDE).
 				return
 			}
 
 			addFlags := copyFlags(flags)
 			addFlags = append(addFlags, "ADD_CONSTRAINT")
 			result.DDLActions = append(result.DDLActions, DDLAction{
-				Type:        DDLAlterTable,
-				ObjectName:  tableName,
-				Schema:      tableSchema,
-				Columns:     collectAlterTableConstraintColumns(primaryKey, foreignKeys),
-				PrimaryKey:  primaryKey,
-				ForeignKeys: append([]DDLForeignKey(nil), foreignKeys...),
-				Flags:       addFlags,
+				Type:             DDLAlterTable,
+				ObjectName:       tableName,
+				Schema:           tableSchema,
+				Columns:          collectAlterTableConstraintColumns(constraints.PrimaryKey, constraints.ForeignKeys),
+				PrimaryKey:       constraints.PrimaryKey,
+				ForeignKeys:      constraints.ForeignKeys,
+				UniqueKeys:       constraints.UniqueKeys,
+				CheckConstraints: constraints.CheckConstraints,
+				Flags:            addFlags,
 			})
 			return
 		}

@@ -127,6 +127,17 @@ const (
 	DDLComment     DDLActionType = "COMMENT"
 )
 
+// FKAction identifies a referential action for ON DELETE / ON UPDATE.
+type FKAction string
+
+const (
+	FKNoAction   FKAction = "NO ACTION"
+	FKRestrict   FKAction = "RESTRICT"
+	FKCascade    FKAction = "CASCADE"
+	FKSetNull    FKAction = "SET NULL"
+	FKSetDefault FKAction = "SET DEFAULT"
+)
+
 // DDLColumn describes column-level metadata extracted from CREATE TABLE statements.
 type DDLColumn struct {
 	Name     string
@@ -149,22 +160,38 @@ type DDLForeignKey struct {
 	ReferencesSchema  string
 	ReferencesTable   string
 	ReferencesColumns []string
+	OnDelete          FKAction
+	OnUpdate          FKAction
+}
+
+// DDLUniqueConstraint describes a CREATE TABLE UNIQUE constraint.
+type DDLUniqueConstraint struct {
+	ConstraintName string
+	Columns        []string
+}
+
+// DDLCheckConstraint describes a CREATE TABLE CHECK constraint.
+type DDLCheckConstraint struct {
+	ConstraintName string
+	Expression     string
 }
 
 // DDLAction describes a single DDL operation extracted from a statement.
 type DDLAction struct {
-	Type          DDLActionType
-	ObjectName    string      // Unqualified table/index/object name
-	ObjectType    string      // TABLE, COLUMN, INDEX, ...
-	Schema        string      // Optional schema qualifier
-	Columns       []string    // Affected columns
-	ColumnDetails []DDLColumn // Column metadata (CREATE TABLE)
-	PrimaryKey    *DDLPrimaryKey
-	ForeignKeys   []DDLForeignKey
-	Flags         []string // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
-	IndexType     string   // btree, gin, gist, hash (CREATE INDEX only)
-	Target        string   // Generic fully-qualified target path for comment-like actions.
-	Comment       string   // Comment text for COMMENT ON statements.
+	Type             DDLActionType
+	ObjectName       string      // Unqualified table/index/object name
+	ObjectType       string      // TABLE, COLUMN, INDEX, ...
+	Schema           string      // Optional schema qualifier
+	Columns          []string    // Affected columns
+	ColumnDetails    []DDLColumn // Column metadata (CREATE TABLE)
+	PrimaryKey       *DDLPrimaryKey
+	ForeignKeys      []DDLForeignKey
+	UniqueKeys       []DDLUniqueConstraint
+	CheckConstraints []DDLCheckConstraint
+	Flags            []string // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
+	IndexType        string   // btree, gin, gist, hash (CREATE INDEX only)
+	Target           string   // Generic fully-qualified target path for comment-like actions.
+	Comment          string   // Comment text for COMMENT ON statements.
 }
 
 // SubqueryRef records metadata for subqueries discovered in FROM or set operations.

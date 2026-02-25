@@ -492,6 +492,134 @@ func TestIR_DDL_CreateTable_Relationships_InlineConstraints(t *testing.T) {
 	assert.Equal(t, DDLColumn{Name: "id", Type: "integer", Nullable: false}, act.ColumnDetails[0], "id column mismatch")
 }
 
+func TestIR_DDL_CreateTable_Relationships_ReferentialActions(t *testing.T) {
+	sql := `CREATE TABLE public.orders (
+    id integer PRIMARY KEY,
+    user_id integer REFERENCES public.users(id) ON DELETE CASCADE ON UPDATE SET NULL,
+    product_id integer,
+    CONSTRAINT orders_product_fk FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET DEFAULT ON UPDATE RESTRICT
+);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+	act := ir.DDLActions[0]
+
+	require.NotNil(t, act.PrimaryKey, "expected primary key metadata")
+	assert.Equal(t, &DDLPrimaryKey{Columns: []string{"id"}}, act.PrimaryKey, "primary key mismatch")
+
+	require.Len(t, act.ForeignKeys, 2, "foreign key count mismatch")
+
+	assert.Equal(t, DDLForeignKey{
+		Columns:           []string{"user_id"},
+		ReferencesSchema:  "public",
+		ReferencesTable:   "users",
+		ReferencesColumns: []string{"id"},
+		OnDelete:          FKCascade,
+		OnUpdate:          FKSetNull,
+	}, act.ForeignKeys[0], "inline FK mismatch")
+
+	assert.Equal(t, DDLForeignKey{
+		ConstraintName:    "orders_product_fk",
+		Columns:           []string{"product_id"},
+		ReferencesTable:   "products",
+		ReferencesColumns: []string{"id"},
+		OnDelete:          FKSetDefault,
+		OnUpdate:          FKRestrict,
+	}, act.ForeignKeys[1], "table-level FK mismatch")
+}
+
+func TestIR_DDL_CreateTable_Relationships_NoAction(t *testing.T) {
+	sql := `CREATE TABLE t (
+    id integer PRIMARY KEY,
+    ref_id integer REFERENCES other(id) ON DELETE NO ACTION
+);`
+	ir := parseAssertNoError(t, sql)
+
+	require.Len(t, ir.DDLActions, 1)
+	require.Len(t, ir.DDLActions[0].ForeignKeys, 1)
+	assert.Equal(t, FKNoAction, ir.DDLActions[0].ForeignKeys[0].OnDelete)
+	assert.Empty(t, ir.DDLActions[0].ForeignKeys[0].OnUpdate)
+}
+
+func TestIR_DDL_CreateTable_UniqueConstraints(t *testing.T) {
+	sql := `CREATE TABLE public.users (
+    id integer PRIMARY KEY,
+    email text UNIQUE,
+    code text,
+    region text,
+    CONSTRAINT users_code_region_uniq UNIQUE (code, region)
+);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command)
+	require.Len(t, ir.DDLActions, 1)
+	act := ir.DDLActions[0]
+
+	assert.Equal(t, []DDLUniqueConstraint{
+		{Columns: []string{"email"}},
+		{ConstraintName: "users_code_region_uniq", Columns: []string{"code", "region"}},
+	}, act.UniqueKeys, "unique keys mismatch")
+	assert.NotNil(t, act.PrimaryKey, "expected primary key")
+}
+
+func TestIR_DDL_CreateTable_CheckConstraints(t *testing.T) {
+	sql := `CREATE TABLE public.products (
+    id integer PRIMARY KEY,
+    price numeric CONSTRAINT positive_price CHECK (price > 0),
+    quantity integer CHECK (quantity >= 0),
+    CONSTRAINT valid_margin CHECK (price > quantity)
+);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command)
+	require.Len(t, ir.DDLActions, 1)
+	act := ir.DDLActions[0]
+
+	require.Len(t, act.CheckConstraints, 3, "check constraint count mismatch")
+	assert.Equal(t, "positive_price", act.CheckConstraints[0].ConstraintName)
+	assert.Equal(t, "price > 0", act.CheckConstraints[0].Expression)
+	assert.Empty(t, act.CheckConstraints[1].ConstraintName)
+	assert.Equal(t, "quantity >= 0", act.CheckConstraints[1].Expression)
+	assert.Equal(t, "valid_margin", act.CheckConstraints[2].ConstraintName)
+	assert.Equal(t, "price > quantity", act.CheckConstraints[2].Expression)
+}
+
+func TestIR_DDL_AlterTableAddConstraintUnique(t *testing.T) {
+	sql := `ALTER TABLE public.users ADD CONSTRAINT users_email_uniq UNIQUE (email);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command)
+	require.Len(t, ir.DDLActions, 1)
+	act := ir.DDLActions[0]
+
+	assert.Equal(t, DDLAlterTable, act.Type)
+	assert.Contains(t, act.Flags, "ADD_CONSTRAINT")
+	assert.Equal(t, []DDLUniqueConstraint{
+		{ConstraintName: "users_email_uniq", Columns: []string{"email"}},
+	}, act.UniqueKeys, "unique keys mismatch")
+	assert.Nil(t, act.PrimaryKey)
+	assert.Empty(t, act.ForeignKeys)
+}
+
+func TestIR_DDL_AlterTableAddConstraintCheck(t *testing.T) {
+	sql := `ALTER TABLE public.products ADD CONSTRAINT positive_price CHECK (price > 0);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command)
+	require.Len(t, ir.DDLActions, 1)
+	act := ir.DDLActions[0]
+
+	assert.Equal(t, DDLAlterTable, act.Type)
+	assert.Contains(t, act.Flags, "ADD_CONSTRAINT")
+	require.Len(t, act.CheckConstraints, 1)
+	assert.Equal(t, "positive_price", act.CheckConstraints[0].ConstraintName)
+	assert.Equal(t, "price > 0", act.CheckConstraints[0].Expression)
+	assert.Nil(t, act.PrimaryKey)
+	assert.Empty(t, act.ForeignKeys)
+	assert.Empty(t, act.UniqueKeys)
+}
+
 func TestIR_DDL_CreateTableTypeCoverage(t *testing.T) {
 	sql := `CREATE TABLE public.type_matrix (
     c_smallint smallint,

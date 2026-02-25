@@ -194,22 +194,38 @@ type SQLDDLForeignKey struct {
 	ReferencesSchema  string
 	ReferencesTable   string
 	ReferencesColumns []string
+	OnDelete          string
+	OnUpdate          string
+}
+
+// SQLDDLUniqueConstraint describes CREATE TABLE UNIQUE constraint metadata.
+type SQLDDLUniqueConstraint struct {
+	ConstraintName string
+	Columns        []string
+}
+
+// SQLDDLCheckConstraint describes CREATE TABLE CHECK constraint metadata.
+type SQLDDLCheckConstraint struct {
+	ConstraintName string
+	Expression     string
 }
 
 // SQLDDLAction describes a single DDL operation in the analysis result.
 type SQLDDLAction struct {
-	Type          string
-	ObjectName    string
-	ObjectType    string
-	Schema        string
-	Columns       []string
-	ColumnDetails []SQLDDLColumn
-	PrimaryKey    *SQLDDLPrimaryKey
-	ForeignKeys   []SQLDDLForeignKey
-	Flags         []string
-	IndexType     string
-	Target        string
-	Comment       string
+	Type             string
+	ObjectName       string
+	ObjectType       string
+	Schema           string
+	Columns          []string
+	ColumnDetails    []SQLDDLColumn
+	PrimaryKey       *SQLDDLPrimaryKey
+	ForeignKeys      []SQLDDLForeignKey
+	UniqueKeys       []SQLDDLUniqueConstraint
+	CheckConstraints []SQLDDLCheckConstraint
+	Flags            []string
+	IndexType        string
+	Target           string
+	Comment          string
 }
 
 // SQLParseWarningCode identifies non-fatal parser notices in analysis batch results.
