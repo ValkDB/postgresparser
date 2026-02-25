@@ -58,7 +58,6 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 		action.PrimaryKey = constraints.PrimaryKey
 		action.ForeignKeys = constraints.ForeignKeys
 		action.UniqueKeys = constraints.UniqueKeys
-		action.CheckConstraints = constraints.CheckConstraints
 		primaryKeyCols := createTablePrimaryKeyColumnSet(action.PrimaryKey)
 		var fieldCommentsByColumn map[string][]string
 		if opts.IncludeCreateTableFieldComments {
@@ -137,10 +136,9 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 // tableConstraints bundles constraint metadata extracted from CREATE TABLE or
 // ALTER TABLE ... ADD CONSTRAINT.
 type tableConstraints struct {
-	PrimaryKey       *DDLPrimaryKey
-	ForeignKeys      []DDLForeignKey
-	UniqueKeys       []DDLUniqueConstraint
-	CheckConstraints []DDLCheckConstraint
+	PrimaryKey  *DDLPrimaryKey
+	ForeignKeys []DDLForeignKey
+	UniqueKeys  []DDLUniqueConstraint
 }
 
 func (tc *tableConstraints) merge(other tableConstraints) {
@@ -150,7 +148,6 @@ func (tc *tableConstraints) merge(other tableConstraints) {
 	}
 	tc.ForeignKeys = append(tc.ForeignKeys, other.ForeignKeys...)
 	tc.UniqueKeys = append(tc.UniqueKeys, other.UniqueKeys...)
-	tc.CheckConstraints = append(tc.CheckConstraints, other.CheckConstraints...)
 }
 
 // extractCreateTableConstraints extracts CREATE TABLE PK/FK/UNIQUE/CHECK
@@ -222,13 +219,6 @@ func extractCreateTableColumnConstraints(colDef gen.IColumnDefContext, tokens an
 			})
 		}
 
-		if elem.CHECK() != nil {
-			out.CheckConstraints = append(out.CheckConstraints, DDLCheckConstraint{
-				ConstraintName: constraintName,
-				Expression:     extractCheckExpression(elem, tokens),
-			})
-		}
-
 		if elem.REFERENCES() != nil && elem.Qualified_name() != nil {
 			out.ForeignKeys = append(out.ForeignKeys, createTableForeignKeyFromReference(
 				constraintName,
@@ -273,13 +263,6 @@ func extractCreateTableTableConstraint(tableConstraint gen.ITableconstraintConte
 				Columns:        cols,
 			})
 		}
-	}
-
-	if elem.CHECK() != nil {
-		out.CheckConstraints = append(out.CheckConstraints, DDLCheckConstraint{
-			ConstraintName: constraintName,
-			Expression:     extractCheckExpression(elem, tokens),
-		})
 	}
 
 	if elem.FOREIGN() != nil && elem.KEY() != nil && elem.REFERENCES() != nil && elem.Qualified_name() != nil {
@@ -364,29 +347,6 @@ func extractKeyActionText(action gen.IKey_actionContext) FKAction {
 		return FKNoAction
 	}
 	return ""
-}
-
-// checkExpressionNode is an interface satisfied by both inline and table-level
-// constraint elements that contain a CHECK expression.
-type checkExpressionNode interface {
-	A_expr() gen.IA_exprContext
-}
-
-// extractCheckExpression returns the text of a CHECK (...) expression.
-func extractCheckExpression(node checkExpressionNode, tokens antlr.TokenStream) string {
-	if node == nil {
-		return ""
-	}
-	aExpr := node.A_expr()
-	if aExpr == nil {
-		return ""
-	}
-	if prc, ok := aExpr.(antlr.ParserRuleContext); ok {
-		if txt := strings.TrimSpace(ctxText(tokens, prc)); txt != "" {
-			return txt
-		}
-	}
-	return strings.TrimSpace(aExpr.GetText())
 }
 
 // createTableConstraintName returns the optional name on a CREATE TABLE
@@ -633,7 +593,7 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 		if tableConstraint := cmd.Tableconstraint(); tableConstraint != nil {
 			constraints := extractCreateTableTableConstraint(tableConstraint, tokens)
 			if constraints.PrimaryKey == nil && len(constraints.ForeignKeys) == 0 &&
-				len(constraints.UniqueKeys) == 0 && len(constraints.CheckConstraints) == 0 {
+				len(constraints.UniqueKeys) == 0 {
 				// Ignore unsupported ADD CONSTRAINT kinds (EXCLUDE).
 				return
 			}
@@ -641,15 +601,14 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 			addFlags := copyFlags(flags)
 			addFlags = append(addFlags, "ADD_CONSTRAINT")
 			result.DDLActions = append(result.DDLActions, DDLAction{
-				Type:             DDLAlterTable,
-				ObjectName:       tableName,
-				Schema:           tableSchema,
-				Columns:          collectAlterTableConstraintColumns(constraints.PrimaryKey, constraints.ForeignKeys),
-				PrimaryKey:       constraints.PrimaryKey,
-				ForeignKeys:      constraints.ForeignKeys,
-				UniqueKeys:       constraints.UniqueKeys,
-				CheckConstraints: constraints.CheckConstraints,
-				Flags:            addFlags,
+				Type:        DDLAlterTable,
+				ObjectName:  tableName,
+				Schema:      tableSchema,
+				Columns:     collectAlterTableConstraintColumns(constraints.PrimaryKey, constraints.ForeignKeys),
+				PrimaryKey:  constraints.PrimaryKey,
+				ForeignKeys: constraints.ForeignKeys,
+				UniqueKeys:  constraints.UniqueKeys,
+				Flags:       addFlags,
 			})
 			return
 		}

@@ -170,28 +170,21 @@ type DDLUniqueConstraint struct {
 	Columns        []string
 }
 
-// DDLCheckConstraint describes a CREATE TABLE CHECK constraint.
-type DDLCheckConstraint struct {
-	ConstraintName string
-	Expression     string
-}
-
 // DDLAction describes a single DDL operation extracted from a statement.
 type DDLAction struct {
-	Type             DDLActionType
-	ObjectName       string      // Unqualified table/index/object name
-	ObjectType       string      // TABLE, COLUMN, INDEX, ...
-	Schema           string      // Optional schema qualifier
-	Columns          []string    // Affected columns
-	ColumnDetails    []DDLColumn // Column metadata (CREATE TABLE)
-	PrimaryKey       *DDLPrimaryKey
-	ForeignKeys      []DDLForeignKey
-	UniqueKeys       []DDLUniqueConstraint
-	CheckConstraints []DDLCheckConstraint
-	Flags            []string // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
-	IndexType        string   // btree, gin, gist, hash (CREATE INDEX only)
-	Target           string   // Generic fully-qualified target path for comment-like actions.
-	Comment          string   // Comment text for COMMENT ON statements.
+	Type          DDLActionType
+	ObjectName    string      // Unqualified table/index/object name
+	ObjectType    string      // TABLE, COLUMN, INDEX, ...
+	Schema        string      // Optional schema qualifier
+	Columns       []string    // Affected columns
+	ColumnDetails []DDLColumn // Column metadata (CREATE TABLE)
+	PrimaryKey    *DDLPrimaryKey
+	ForeignKeys   []DDLForeignKey
+	UniqueKeys    []DDLUniqueConstraint
+	Flags         []string // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
+	IndexType     string   // btree, gin, gist, hash (CREATE INDEX only)
+	Target        string   // Generic fully-qualified target path for comment-like actions.
+	Comment       string   // Comment text for COMMENT ON statements.
 }
 
 // SubqueryRef records metadata for subqueries discovered in FROM or set operations.

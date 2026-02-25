@@ -618,28 +618,6 @@ func TestAnalyzeSQL_DDL_CreateTable_UniqueConstraints(t *testing.T) {
 	assert.NotNil(t, act.PrimaryKey)
 }
 
-func TestAnalyzeSQL_DDL_CreateTable_CheckConstraints(t *testing.T) {
-	sql := `CREATE TABLE public.products (
-    id integer PRIMARY KEY,
-    price numeric CONSTRAINT positive_price CHECK (price > 0),
-    quantity integer CHECK (quantity >= 0),
-    CONSTRAINT valid_margin CHECK (price > quantity)
-);`
-	res, err := AnalyzeSQL(sql)
-	require.NoError(t, err)
-	assert.Equal(t, SQLCommandDDL, res.Command, "expected DDL command")
-	require.Len(t, res.DDLActions, 1)
-
-	act := res.DDLActions[0]
-	require.Len(t, act.CheckConstraints, 3, "check constraint count mismatch")
-	assert.Equal(t, "positive_price", act.CheckConstraints[0].ConstraintName)
-	assert.Equal(t, "price > 0", act.CheckConstraints[0].Expression)
-	assert.Empty(t, act.CheckConstraints[1].ConstraintName)
-	assert.Equal(t, "quantity >= 0", act.CheckConstraints[1].Expression)
-	assert.Equal(t, "valid_margin", act.CheckConstraints[2].ConstraintName)
-	assert.Equal(t, "price > quantity", act.CheckConstraints[2].Expression)
-}
-
 func TestAnalyzeSQL_DDL_CreateTableTypeCoverage(t *testing.T) {
 	sql := `CREATE TABLE public.type_matrix (
     c_smallint smallint,

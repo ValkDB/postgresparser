@@ -563,28 +563,6 @@ func TestIR_DDL_CreateTable_UniqueConstraints(t *testing.T) {
 	assert.NotNil(t, act.PrimaryKey, "expected primary key")
 }
 
-func TestIR_DDL_CreateTable_CheckConstraints(t *testing.T) {
-	sql := `CREATE TABLE public.products (
-    id integer PRIMARY KEY,
-    price numeric CONSTRAINT positive_price CHECK (price > 0),
-    quantity integer CHECK (quantity >= 0),
-    CONSTRAINT valid_margin CHECK (price > quantity)
-);`
-	ir := parseAssertNoError(t, sql)
-
-	assert.Equal(t, QueryCommandDDL, ir.Command)
-	require.Len(t, ir.DDLActions, 1)
-	act := ir.DDLActions[0]
-
-	require.Len(t, act.CheckConstraints, 3, "check constraint count mismatch")
-	assert.Equal(t, "positive_price", act.CheckConstraints[0].ConstraintName)
-	assert.Equal(t, "price > 0", act.CheckConstraints[0].Expression)
-	assert.Empty(t, act.CheckConstraints[1].ConstraintName)
-	assert.Equal(t, "quantity >= 0", act.CheckConstraints[1].Expression)
-	assert.Equal(t, "valid_margin", act.CheckConstraints[2].ConstraintName)
-	assert.Equal(t, "price > quantity", act.CheckConstraints[2].Expression)
-}
-
 func TestIR_DDL_AlterTableAddConstraintUnique(t *testing.T) {
 	sql := `ALTER TABLE public.users ADD CONSTRAINT users_email_uniq UNIQUE (email);`
 	ir := parseAssertNoError(t, sql)
@@ -600,24 +578,6 @@ func TestIR_DDL_AlterTableAddConstraintUnique(t *testing.T) {
 	}, act.UniqueKeys, "unique keys mismatch")
 	assert.Nil(t, act.PrimaryKey)
 	assert.Empty(t, act.ForeignKeys)
-}
-
-func TestIR_DDL_AlterTableAddConstraintCheck(t *testing.T) {
-	sql := `ALTER TABLE public.products ADD CONSTRAINT positive_price CHECK (price > 0);`
-	ir := parseAssertNoError(t, sql)
-
-	assert.Equal(t, QueryCommandDDL, ir.Command)
-	require.Len(t, ir.DDLActions, 1)
-	act := ir.DDLActions[0]
-
-	assert.Equal(t, DDLAlterTable, act.Type)
-	assert.Contains(t, act.Flags, "ADD_CONSTRAINT")
-	require.Len(t, act.CheckConstraints, 1)
-	assert.Equal(t, "positive_price", act.CheckConstraints[0].ConstraintName)
-	assert.Equal(t, "price > 0", act.CheckConstraints[0].Expression)
-	assert.Nil(t, act.PrimaryKey)
-	assert.Empty(t, act.ForeignKeys)
-	assert.Empty(t, act.UniqueKeys)
 }
 
 func TestIR_DDL_CreateTableTypeCoverage(t *testing.T) {

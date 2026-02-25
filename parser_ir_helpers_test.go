@@ -155,7 +155,6 @@ func TestExtractCreateTableConstraints(t *testing.T) {
 		},
 	}, constraints.ForeignKeys)
 	assert.Empty(t, constraints.UniqueKeys)
-	assert.Empty(t, constraints.CheckConstraints)
 }
 
 func TestCollectAlterTableConstraintColumns(t *testing.T) {

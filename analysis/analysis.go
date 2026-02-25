@@ -422,19 +422,18 @@ func convertDDLActions(actions []postgresparser.DDLAction) []SQLDDLAction {
 	for _, a := range actions {
 		out = append(out, SQLDDLAction{
 			Type:          string(a.Type),
-			ObjectName:       a.ObjectName,
-			ObjectType:       a.ObjectType,
-			Schema:           a.Schema,
-			Columns:          append([]string(nil), a.Columns...),
-			ColumnDetails:    convertDDLColumns(a.ColumnDetails),
-			PrimaryKey:       convertDDLPrimaryKey(a.PrimaryKey),
-			ForeignKeys:      convertDDLForeignKeys(a.ForeignKeys),
-			UniqueKeys:       convertDDLUniqueKeys(a.UniqueKeys),
-			CheckConstraints: convertDDLCheckConstraints(a.CheckConstraints),
-			Flags:            append([]string(nil), a.Flags...),
-			IndexType:        a.IndexType,
-			Target:           a.Target,
-			Comment:          a.Comment,
+			ObjectName:    a.ObjectName,
+			ObjectType:    a.ObjectType,
+			Schema:        a.Schema,
+			Columns:       append([]string(nil), a.Columns...),
+			ColumnDetails: convertDDLColumns(a.ColumnDetails),
+			PrimaryKey:    convertDDLPrimaryKey(a.PrimaryKey),
+			ForeignKeys:   convertDDLForeignKeys(a.ForeignKeys),
+			UniqueKeys:    convertDDLUniqueKeys(a.UniqueKeys),
+			Flags:         append([]string(nil), a.Flags...),
+			IndexType:     a.IndexType,
+			Target:        a.Target,
+			Comment:       a.Comment,
 		})
 	}
 	return out
@@ -499,21 +498,6 @@ func convertDDLUniqueKeys(uks []postgresparser.DDLUniqueConstraint) []SQLDDLUniq
 		out = append(out, SQLDDLUniqueConstraint{
 			ConstraintName: uk.ConstraintName,
 			Columns:        append([]string(nil), uk.Columns...),
-		})
-	}
-	return out
-}
-
-// convertDDLCheckConstraints maps parser CHECK constraint metadata into analysis DTOs.
-func convertDDLCheckConstraints(cks []postgresparser.DDLCheckConstraint) []SQLDDLCheckConstraint {
-	if len(cks) == 0 {
-		return nil
-	}
-	out := make([]SQLDDLCheckConstraint, 0, len(cks))
-	for _, ck := range cks {
-		out = append(out, SQLDDLCheckConstraint{
-			ConstraintName: ck.ConstraintName,
-			Expression:     ck.Expression,
 		})
 	}
 	return out
