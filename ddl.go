@@ -152,7 +152,7 @@ func (tc *tableConstraints) merge(other tableConstraints) {
 	tc.UniqueKeys = append(tc.UniqueKeys, other.UniqueKeys...)
 }
 
-// extractCreateTableConstraints extracts CREATE TABLE PK/FK/UNIQUE/CHECK
+// extractCreateTableConstraints extracts CREATE TABLE PK/FK/UNIQUE
 // metadata from inline and table-level constraints.
 func extractCreateTableConstraints(tableElems []gen.ITableelementContext, tokens antlr.TokenStream) tableConstraints {
 	var out tableConstraints
@@ -178,7 +178,7 @@ func extractCreateTableConstraints(tableElems []gen.ITableelementContext, tokens
 	return out
 }
 
-// extractCreateTableColumnConstraints extracts PK/FK/UNIQUE/CHECK metadata from
+// extractCreateTableColumnConstraints extracts PK/FK/UNIQUE metadata from
 // inline column constraints.
 func extractCreateTableColumnConstraints(colDef gen.IColumnDefContext, tokens antlr.TokenStream) tableConstraints {
 	var out tableConstraints
@@ -236,7 +236,7 @@ func extractCreateTableColumnConstraints(colDef gen.IColumnDefContext, tokens an
 	return out
 }
 
-// extractCreateTableTableConstraint extracts PK/FK/UNIQUE/CHECK metadata from a
+// extractCreateTableTableConstraint extracts PK/FK/UNIQUE metadata from a
 // table-level constraint.
 func extractCreateTableTableConstraint(tableConstraint gen.ITableconstraintContext, tokens antlr.TokenStream) tableConstraints {
 	var out tableConstraints
