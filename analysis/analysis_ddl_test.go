@@ -1146,9 +1146,28 @@ func TestAnalyzeSQL_DDL_AlterTableOnlySchemaQualifiedTableRef(t *testing.T) {
 		t.Fatalf("expected raw table text with ONLY, got %q", res.Tables[0].Raw)
 	}
 
-	// ADD CONSTRAINT is currently skipped in DDL action extraction.
-	if len(res.DDLActions) != 0 {
-		t.Fatalf("expected no DDL actions for ADD CONSTRAINT, got %+v", res.DDLActions)
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action for ADD CONSTRAINT, got %+v", res.DDLActions)
+	}
+	act := res.DDLActions[0]
+	if act.Type != "ALTER_TABLE" {
+		t.Fatalf("expected ALTER_TABLE, got %s", act.Type)
+	}
+	assertAnalysisFlag(t, act.Flags, "ADD_CONSTRAINT")
+	if act.Schema != "public" || act.ObjectName != "schema_migrations" {
+		t.Fatalf("unexpected action target: %+v", act)
+	}
+	if !reflect.DeepEqual(act.Columns, []string{"version"}) {
+		t.Fatalf("constrained columns mismatch: %v", act.Columns)
+	}
+	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+		ConstraintName: "schema_migrations_pkey",
+		Columns:        []string{"version"},
+	}) {
+		t.Fatalf("primary key mismatch: %+v", act.PrimaryKey)
+	}
+	if len(act.ForeignKeys) != 0 {
+		t.Fatalf("expected no foreign keys, got %+v", act.ForeignKeys)
 	}
 }
 
@@ -1172,9 +1191,69 @@ func TestAnalyzeSQL_DDL_AlterTableOnlyUnqualifiedTableRef(t *testing.T) {
 		t.Fatalf("expected raw table text with ONLY, got %q", res.Tables[0].Raw)
 	}
 
-	// ADD CONSTRAINT is currently skipped in DDL action extraction.
-	if len(res.DDLActions) != 0 {
-		t.Fatalf("expected no DDL actions for ADD CONSTRAINT, got %+v", res.DDLActions)
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action for ADD CONSTRAINT, got %+v", res.DDLActions)
+	}
+	act := res.DDLActions[0]
+	if act.Type != "ALTER_TABLE" {
+		t.Fatalf("expected ALTER_TABLE, got %s", act.Type)
+	}
+	assertAnalysisFlag(t, act.Flags, "ADD_CONSTRAINT")
+	if act.Schema != "" || act.ObjectName != "schema_migrations" {
+		t.Fatalf("unexpected action target: %+v", act)
+	}
+	if !reflect.DeepEqual(act.Columns, []string{"version"}) {
+		t.Fatalf("constrained columns mismatch: %v", act.Columns)
+	}
+	if !reflect.DeepEqual(act.PrimaryKey, &SQLDDLPrimaryKey{
+		ConstraintName: "schema_migrations_pkey",
+		Columns:        []string{"version"},
+	}) {
+		t.Fatalf("primary key mismatch: %+v", act.PrimaryKey)
+	}
+	if len(act.ForeignKeys) != 0 {
+		t.Fatalf("expected no foreign keys, got %+v", act.ForeignKeys)
+	}
+}
+
+func TestAnalyzeSQL_DDL_AlterTableAddConstraintForeignKey(t *testing.T) {
+	sql := `ALTER TABLE public.users
+    ADD CONSTRAINT users_org_fk FOREIGN KEY (org_id) REFERENCES public.organizations(id);`
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if res.Command != SQLCommandDDL {
+		t.Fatalf("expected DDL command, got %s", res.Command)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d: %+v", len(res.DDLActions), res.DDLActions)
+	}
+	act := res.DDLActions[0]
+	if act.Type != "ALTER_TABLE" {
+		t.Fatalf("expected ALTER_TABLE, got %s", act.Type)
+	}
+	assertAnalysisFlag(t, act.Flags, "ADD_CONSTRAINT")
+	if act.Schema != "public" || act.ObjectName != "users" {
+		t.Fatalf("unexpected action target: %+v", act)
+	}
+	if !reflect.DeepEqual(act.Columns, []string{"org_id"}) {
+		t.Fatalf("constrained columns mismatch: %v", act.Columns)
+	}
+	if act.PrimaryKey != nil {
+		t.Fatalf("expected nil primary key, got %+v", act.PrimaryKey)
+	}
+	wantFKs := []SQLDDLForeignKey{
+		{
+			ConstraintName:    "users_org_fk",
+			Columns:           []string{"org_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "organizations",
+			ReferencesColumns: []string{"id"},
+		},
+	}
+	if !reflect.DeepEqual(act.ForeignKeys, wantFKs) {
+		t.Fatalf("foreign keys mismatch: got %+v want %+v", act.ForeignKeys, wantFKs)
 	}
 }
 

@@ -117,6 +117,7 @@ Current DDL convention:
 - `COMMENT ON ...` populates `DDLActions` with `Type=COMMENT`.
 - Other DDL actions currently do not populate `ColumnDetails`.
 - `ALTER_TABLE` uses `Columns` and `Flags` for operation-level details.
+- `ALTER_TABLE ... ADD CONSTRAINT` populates `PrimaryKey` and `ForeignKeys` for PK/FK constraints.
 
 ## Parse Options
 

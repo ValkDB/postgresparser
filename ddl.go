@@ -557,8 +557,27 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 		})
 
 	case cmd.ADD_P() != nil:
-		if cmd.CONSTRAINT() != nil || cmd.Tableconstraint() != nil {
-			// Skip ADD CONSTRAINT.
+		if tableConstraint := cmd.Tableconstraint(); tableConstraint != nil {
+			primaryKey, foreignKeys := extractCreateTableTableConstraintRelationships(tableConstraint, tokens)
+			if primaryKey == nil && len(foreignKeys) == 0 {
+				// Ignore unsupported ADD CONSTRAINT kinds (CHECK/UNIQUE/EXCLUDE).
+				return
+			}
+
+			addFlags := copyFlags(flags)
+			addFlags = append(addFlags, "ADD_CONSTRAINT")
+			result.DDLActions = append(result.DDLActions, DDLAction{
+				Type:        DDLAlterTable,
+				ObjectName:  tableName,
+				Schema:      tableSchema,
+				Columns:     collectAlterTableConstraintColumns(primaryKey, foreignKeys),
+				PrimaryKey:  primaryKey,
+				ForeignKeys: append([]DDLForeignKey(nil), foreignKeys...),
+				Flags:       addFlags,
+			})
+			return
+		}
+		if cmd.CONSTRAINT() != nil {
 			return
 		}
 		colName := ""
@@ -621,6 +640,42 @@ func extractAlterCmdColumnName(cmd gen.IAlter_table_cmdContext, tokens antlr.Tok
 		}
 	}
 	return ""
+}
+
+// collectAlterTableConstraintColumns returns unique constrained columns in input
+// order across PK and FK payloads.
+func collectAlterTableConstraintColumns(primaryKey *DDLPrimaryKey, foreignKeys []DDLForeignKey) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0)
+	appendUnique := func(col string) {
+		if col == "" {
+			return
+		}
+		key := normalizeCreateTableColumnName(col)
+		if key == "" {
+			key = strings.TrimSpace(col)
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, col)
+	}
+
+	if primaryKey != nil {
+		for _, col := range primaryKey.Columns {
+			appendUnique(col)
+		}
+	}
+	for _, fk := range foreignKeys {
+		for _, col := range fk.Columns {
+			appendUnique(col)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // extractRelationExprNameParts extracts relation expression text and normalized schema/name.

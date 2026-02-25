@@ -160,6 +160,19 @@ func TestExtractCreateTableRelationships(t *testing.T) {
 	}, fks)
 }
 
+func TestCollectAlterTableConstraintColumns(t *testing.T) {
+	pk := &DDLPrimaryKey{
+		Columns: []string{"id", `"CaseSensitive"`},
+	}
+	fks := []DDLForeignKey{
+		{Columns: []string{"org_id"}},
+		{Columns: []string{"id", `"CaseSensitive"`, "branch_id"}},
+	}
+
+	got := collectAlterTableConstraintColumns(pk, fks)
+	assert.Equal(t, []string{"id", `"CaseSensitive"`, "org_id", "branch_id"}, got)
+}
+
 // parseCreateTableElements returns CREATE TABLE table elements for helper-level DDL extraction tests.
 func parseCreateTableElements(t *testing.T, sql string) []gen.ITableelementContext {
 	t.Helper()

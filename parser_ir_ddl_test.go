@@ -1140,8 +1140,18 @@ func TestIR_DDL_AlterTableOnlySchemaQualifiedTableRef(t *testing.T) {
 	assert.Equal(t, "schema_migrations", ir.Tables[0].Name, "table name mismatch")
 	assert.Equal(t, "ONLY public.schema_migrations", ir.Tables[0].Raw, "table raw mismatch")
 
-	// ADD CONSTRAINT is currently skipped in DDL action extraction.
-	assert.Empty(t, ir.DDLActions, "expected no DDL actions for ADD CONSTRAINT")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLAlterTable, act.Type, "expected ALTER_TABLE")
+	assert.Equal(t, "public", act.Schema, "action schema mismatch")
+	assert.Equal(t, "schema_migrations", act.ObjectName, "action object mismatch")
+	assert.Contains(t, act.Flags, "ADD_CONSTRAINT", "expected flag ADD_CONSTRAINT")
+	assert.Equal(t, []string{"version"}, act.Columns, "constrained columns mismatch")
+	assert.Equal(t, &DDLPrimaryKey{
+		ConstraintName: "schema_migrations_pkey",
+		Columns:        []string{"version"},
+	}, act.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.ForeignKeys, "foreign keys mismatch")
 }
 
 func TestIR_DDL_AlterTableOnlyUnqualifiedTableRef(t *testing.T) {
@@ -1155,8 +1165,44 @@ func TestIR_DDL_AlterTableOnlyUnqualifiedTableRef(t *testing.T) {
 	assert.Equal(t, "schema_migrations", ir.Tables[0].Name, "table name mismatch")
 	assert.Equal(t, "ONLY schema_migrations", ir.Tables[0].Raw, "table raw mismatch")
 
-	// ADD CONSTRAINT is currently skipped in DDL action extraction.
-	assert.Empty(t, ir.DDLActions, "expected no DDL actions for ADD CONSTRAINT")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLAlterTable, act.Type, "expected ALTER_TABLE")
+	assert.Empty(t, act.Schema, "action schema mismatch")
+	assert.Equal(t, "schema_migrations", act.ObjectName, "action object mismatch")
+	assert.Contains(t, act.Flags, "ADD_CONSTRAINT", "expected flag ADD_CONSTRAINT")
+	assert.Equal(t, []string{"version"}, act.Columns, "constrained columns mismatch")
+	assert.Equal(t, &DDLPrimaryKey{
+		ConstraintName: "schema_migrations_pkey",
+		Columns:        []string{"version"},
+	}, act.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.ForeignKeys, "foreign keys mismatch")
+}
+
+func TestIR_DDL_AlterTableAddConstraintForeignKey(t *testing.T) {
+	sql := `ALTER TABLE public.users
+    ADD CONSTRAINT users_org_fk FOREIGN KEY (org_id) REFERENCES public.organizations(id);`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command, "expected DDL command")
+	require.Len(t, ir.DDLActions, 1, "action count mismatch")
+
+	act := ir.DDLActions[0]
+	assert.Equal(t, DDLAlterTable, act.Type, "expected ALTER_TABLE")
+	assert.Equal(t, "users", act.ObjectName, "object name mismatch")
+	assert.Equal(t, "public", act.Schema, "schema mismatch")
+	assert.Contains(t, act.Flags, "ADD_CONSTRAINT", "expected flag ADD_CONSTRAINT")
+	assert.Nil(t, act.PrimaryKey, "primary key mismatch")
+	assert.Equal(t, []string{"org_id"}, act.Columns, "constrained columns mismatch")
+	assert.Equal(t, []DDLForeignKey{
+		{
+			ConstraintName:    "users_org_fk",
+			Columns:           []string{"org_id"},
+			ReferencesSchema:  "public",
+			ReferencesTable:   "organizations",
+			ReferencesColumns: []string{"id"},
+		},
+	}, act.ForeignKeys, "foreign keys mismatch")
 }
 
 func TestIR_DDL_AlterTableMultiAction(t *testing.T) {
