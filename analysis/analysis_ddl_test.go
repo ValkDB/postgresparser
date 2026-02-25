@@ -419,6 +419,7 @@ func TestAnalyzeSQL_DDL_CreateTable(t *testing.T) {
 	for i := range want {
 		assert.Equal(t, want[i], act.ColumnDetails[i], "column detail %d mismatch", i)
 	}
+	require.NotNil(t, act.Constraints, "expected non-nil constraints for CREATE_TABLE")
 	assert.Nil(t, act.Constraints.PrimaryKey, "expected no primary key metadata")
 	assert.Empty(t, act.Constraints.ForeignKeys, "expected no foreign key metadata")
 
