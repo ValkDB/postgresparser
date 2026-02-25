@@ -88,9 +88,7 @@ Common DDL action fields:
 - `Flags`: Modifiers like `IF_EXISTS`, `IF_NOT_EXISTS`, `CASCADE`, `CONCURRENTLY`, etc.
 - `IndexType`: Index method for `CREATE_INDEX` (for example `btree`, `gin`).
 - `ColumnDetails`: Column metadata for `CREATE_TABLE` actions.
-- `PrimaryKey`: Optional primary key constraint metadata for `CREATE_TABLE`.
-- `ForeignKeys`: Optional foreign key constraint metadata for `CREATE_TABLE`.
-- `UniqueKeys`: Optional UNIQUE constraint metadata for `CREATE_TABLE`.
+- `Constraints`: Optional `*DDLConstraints` grouping PK/FK/UNIQUE metadata (`CREATE_TABLE`, `ALTER_TABLE ADD CONSTRAINT`).
 - `Target`: Generic fully-qualified target path for comment-like actions (for example `public.users.email`).
 - `Comment`: Comment text for `COMMENT` actions.
 
@@ -101,30 +99,17 @@ Common DDL action fields:
 - `Default`
 - `Comment` (`[]string`, optional): inline `--` comment lines preceding a column definition when `IncludeCreateTableFieldComments=true`.
 
-`PrimaryKey` (`*DDLPrimaryKey`) fields:
-- `ConstraintName` (optional)
-- `Columns`
-
-`ForeignKeys` (`[]DDLForeignKey`) fields:
-- `ConstraintName` (optional)
-- `Columns`
-- `ReferencesSchema` (optional)
-- `ReferencesTable`
-- `ReferencesColumns` (optional)
-- `OnDelete` (optional): `CASCADE`, `SET NULL`, `SET DEFAULT`, `RESTRICT`, `NO ACTION`
-- `OnUpdate` (optional): `CASCADE`, `SET NULL`, `SET DEFAULT`, `RESTRICT`, `NO ACTION`
-
-`UniqueKeys` (`[]DDLUniqueConstraint`) fields:
-- `ConstraintName` (optional)
-- `Columns`
+`Constraints` (`*DDLConstraints`) fields:
+- `PrimaryKey` (`*DDLPrimaryKey`): `ConstraintName` (optional), `Columns`.
+- `ForeignKeys` (`[]DDLForeignKey`): `ConstraintName` (optional), `Columns`, `ReferencesSchema` (optional), `ReferencesTable`, `ReferencesColumns` (optional), `OnDelete` (optional), `OnUpdate` (optional). Referential actions: `CASCADE`, `SET NULL`, `SET DEFAULT`, `RESTRICT`, `NO ACTION`.
+- `UniqueKeys` (`[]DDLUniqueConstraint`): `ConstraintName` (optional), `Columns`.
 
 Current DDL convention:
-- `CREATE_TABLE` populates `ColumnDetails`.
-- `CREATE_TABLE` also populates `PrimaryKey`, `ForeignKeys`, and `UniqueKeys` for inline and table-level constraints.
+- `CREATE_TABLE` populates `ColumnDetails` and `Constraints` for inline and table-level constraints.
 - `COMMENT ON ...` populates `DDLActions` with `Type=COMMENT`.
 - Other DDL actions currently do not populate `ColumnDetails`.
 - `ALTER_TABLE` uses `Columns` and `Flags` for operation-level details.
-- `ALTER_TABLE ... ADD CONSTRAINT` populates `PrimaryKey`, `ForeignKeys`, and `UniqueKeys`.
+- `ALTER_TABLE ... ADD CONSTRAINT` populates `Constraints`.
 
 ## Parse Options
 

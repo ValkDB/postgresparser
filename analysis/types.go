@@ -204,6 +204,13 @@ type SQLDDLUniqueConstraint struct {
 	Columns        []string
 }
 
+// SQLDDLConstraints bundles constraint metadata in DDL analysis results.
+type SQLDDLConstraints struct {
+	PrimaryKey  *SQLDDLPrimaryKey
+	ForeignKeys []SQLDDLForeignKey
+	UniqueKeys  []SQLDDLUniqueConstraint
+}
+
 // SQLDDLAction describes a single DDL operation in the analysis result.
 type SQLDDLAction struct {
 	Type          string
@@ -212,9 +219,7 @@ type SQLDDLAction struct {
 	Schema        string
 	Columns       []string
 	ColumnDetails []SQLDDLColumn
-	PrimaryKey    *SQLDDLPrimaryKey
-	ForeignKeys   []SQLDDLForeignKey
-	UniqueKeys    []SQLDDLUniqueConstraint
+	Constraints   *SQLDDLConstraints
 	Flags         []string
 	IndexType     string
 	Target        string

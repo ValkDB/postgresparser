@@ -170,21 +170,27 @@ type DDLUniqueConstraint struct {
 	Columns        []string
 }
 
+// DDLConstraints bundles constraint metadata extracted from CREATE TABLE or
+// ALTER TABLE ... ADD CONSTRAINT.
+type DDLConstraints struct {
+	PrimaryKey  *DDLPrimaryKey
+	ForeignKeys []DDLForeignKey
+	UniqueKeys  []DDLUniqueConstraint
+}
+
 // DDLAction describes a single DDL operation extracted from a statement.
 type DDLAction struct {
 	Type          DDLActionType
-	ObjectName    string      // Unqualified table/index/object name
-	ObjectType    string      // TABLE, COLUMN, INDEX, ...
-	Schema        string      // Optional schema qualifier
-	Columns       []string    // Affected columns
-	ColumnDetails []DDLColumn // Column metadata (CREATE TABLE)
-	PrimaryKey    *DDLPrimaryKey
-	ForeignKeys   []DDLForeignKey
-	UniqueKeys    []DDLUniqueConstraint
-	Flags         []string // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
-	IndexType     string   // btree, gin, gist, hash (CREATE INDEX only)
-	Target        string   // Generic fully-qualified target path for comment-like actions.
-	Comment       string   // Comment text for COMMENT ON statements.
+	ObjectName    string          // Unqualified table/index/object name
+	ObjectType    string          // TABLE, COLUMN, INDEX, ...
+	Schema        string          // Optional schema qualifier
+	Columns       []string        // Affected columns
+	ColumnDetails []DDLColumn     // Column metadata (CREATE TABLE)
+	Constraints   *DDLConstraints // PK/FK/UNIQUE constraint metadata (CREATE TABLE, ALTER TABLE ADD CONSTRAINT)
+	Flags         []string        // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
+	IndexType     string          // btree, gin, gist, hash (CREATE INDEX only)
+	Target        string          // Generic fully-qualified target path for comment-like actions.
+	Comment       string          // Comment text for COMMENT ON statements.
 }
 
 // SubqueryRef records metadata for subqueries discovered in FROM or set operations.

@@ -419,8 +419,8 @@ func TestAnalyzeSQL_DDL_CreateTable(t *testing.T) {
 	for i := range want {
 		assert.Equal(t, want[i], act.ColumnDetails[i], "column detail %d mismatch", i)
 	}
-	assert.Nil(t, act.PrimaryKey, "expected no primary key metadata")
-	assert.Empty(t, act.ForeignKeys, "expected no foreign key metadata")
+	assert.Nil(t, act.Constraints.PrimaryKey, "expected no primary key metadata")
+	assert.Empty(t, act.Constraints.ForeignKeys, "expected no foreign key metadata")
 
 	require.Len(t, res.Tables, 1, "tables count mismatch")
 	assert.Equal(t, "public", res.Tables[0].Schema, "table schema mismatch")
@@ -468,8 +468,8 @@ func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse(t *testing.
 	assert.Equal(t, &SQLDDLPrimaryKey{
 		ConstraintName: "accounts_pk",
 		Columns:        []string{"id", "tenant_id"},
-	}, act.PrimaryKey, "primary key mismatch")
-	assert.Empty(t, act.ForeignKeys, "expected no foreign key metadata")
+	}, act.Constraints.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.Constraints.ForeignKeys, "expected no foreign key metadata")
 
 	require.Len(t, res.Tables, 1, "tables count mismatch")
 	assert.Equal(t, "public", res.Tables[0].Schema, "table schema mismatch")
@@ -516,8 +516,8 @@ func TestAnalyzeSQL_DDL_CreateTable_TablePrimaryKeySetsNullableFalse_NoSchema(t 
 	}
 	assert.Equal(t, &SQLDDLPrimaryKey{
 		Columns: []string{"id", "tenant_id"},
-	}, act.PrimaryKey, "primary key mismatch")
-	assert.Empty(t, act.ForeignKeys, "expected no foreign key metadata")
+	}, act.Constraints.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.Constraints.ForeignKeys, "expected no foreign key metadata")
 
 	require.Len(t, res.Tables, 1, "tables count mismatch")
 	assert.Empty(t, res.Tables[0].Schema, "table schema mismatch")
@@ -543,7 +543,7 @@ func TestAnalyzeSQL_DDL_CreateTable_Relationships_TableConstraints(t *testing.T)
 	assert.Equal(t, &SQLDDLPrimaryKey{
 		ConstraintName: "users_pk",
 		Columns:        []string{"id"},
-	}, act.PrimaryKey, "primary key mismatch")
+	}, act.Constraints.PrimaryKey, "primary key mismatch")
 	assert.Equal(t, []SQLDDLForeignKey{
 		{
 			ConstraintName:    "users_org_fk",
@@ -559,7 +559,7 @@ func TestAnalyzeSQL_DDL_CreateTable_Relationships_TableConstraints(t *testing.T)
 			ReferencesTable:   "branches",
 			ReferencesColumns: []string{"region", "branch_id"},
 		},
-	}, act.ForeignKeys, "foreign keys mismatch")
+	}, act.Constraints.ForeignKeys, "foreign keys mismatch")
 	require.Len(t, act.ColumnDetails, 4, "column details count mismatch")
 	assert.Equal(t, SQLDDLColumn{Name: "id", Type: "integer", Nullable: false}, act.ColumnDetails[0], "id column mismatch")
 }
@@ -578,7 +578,7 @@ func TestAnalyzeSQL_DDL_CreateTable_Relationships_InlineConstraints(t *testing.T
 	act := res.DDLActions[0]
 	assert.Equal(t, &SQLDDLPrimaryKey{
 		Columns: []string{"id"},
-	}, act.PrimaryKey, "primary key mismatch")
+	}, act.Constraints.PrimaryKey, "primary key mismatch")
 	assert.Equal(t, []SQLDDLForeignKey{
 		{
 			ConstraintName:    "memberships_org_fk",
@@ -592,7 +592,7 @@ func TestAnalyzeSQL_DDL_CreateTable_Relationships_InlineConstraints(t *testing.T
 			ReferencesTable:   "branches",
 			ReferencesColumns: []string{"id"},
 		},
-	}, act.ForeignKeys, "foreign keys mismatch")
+	}, act.Constraints.ForeignKeys, "foreign keys mismatch")
 	require.Len(t, act.ColumnDetails, 3, "column details count mismatch")
 	assert.Equal(t, SQLDDLColumn{Name: "id", Type: "integer", Nullable: false}, act.ColumnDetails[0], "id column mismatch")
 }
@@ -614,8 +614,8 @@ func TestAnalyzeSQL_DDL_CreateTable_UniqueConstraints(t *testing.T) {
 	assert.Equal(t, []SQLDDLUniqueConstraint{
 		{Columns: []string{"email"}},
 		{ConstraintName: "users_code_region_uniq", Columns: []string{"code", "region"}},
-	}, act.UniqueKeys, "unique keys mismatch")
-	assert.NotNil(t, act.PrimaryKey)
+	}, act.Constraints.UniqueKeys, "unique keys mismatch")
+	assert.NotNil(t, act.Constraints.PrimaryKey)
 }
 
 func TestAnalyzeSQL_DDL_CreateTableTypeCoverage(t *testing.T) {
@@ -1113,8 +1113,8 @@ func TestAnalyzeSQL_DDL_AlterTableOnlySchemaQualifiedTableRef(t *testing.T) {
 	assert.Equal(t, &SQLDDLPrimaryKey{
 		ConstraintName: "schema_migrations_pkey",
 		Columns:        []string{"version"},
-	}, act.PrimaryKey, "primary key mismatch")
-	assert.Empty(t, act.ForeignKeys, "expected no foreign keys")
+	}, act.Constraints.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.Constraints.ForeignKeys, "expected no foreign keys")
 }
 
 func TestAnalyzeSQL_DDL_AlterTableOnlyUnqualifiedTableRef(t *testing.T) {
@@ -1147,8 +1147,8 @@ func TestAnalyzeSQL_DDL_AlterTableOnlyUnqualifiedTableRef(t *testing.T) {
 	assert.Equal(t, &SQLDDLPrimaryKey{
 		ConstraintName: "schema_migrations_pkey",
 		Columns:        []string{"version"},
-	}, act.PrimaryKey, "primary key mismatch")
-	assert.Empty(t, act.ForeignKeys, "expected no foreign keys")
+	}, act.Constraints.PrimaryKey, "primary key mismatch")
+	assert.Empty(t, act.Constraints.ForeignKeys, "expected no foreign keys")
 }
 
 func TestAnalyzeSQL_DDL_AlterTableAddConstraintForeignKey(t *testing.T) {
@@ -1165,7 +1165,7 @@ func TestAnalyzeSQL_DDL_AlterTableAddConstraintForeignKey(t *testing.T) {
 	assert.Equal(t, "public", act.Schema, "action schema mismatch")
 	assert.Equal(t, "users", act.ObjectName, "action object mismatch")
 	assert.Equal(t, []string{"org_id"}, act.Columns, "constrained columns mismatch")
-	assert.Nil(t, act.PrimaryKey, "expected nil primary key")
+	assert.Nil(t, act.Constraints.PrimaryKey, "expected nil primary key")
 	assert.Equal(t, []SQLDDLForeignKey{
 		{
 			ConstraintName:    "users_org_fk",
@@ -1174,7 +1174,7 @@ func TestAnalyzeSQL_DDL_AlterTableAddConstraintForeignKey(t *testing.T) {
 			ReferencesTable:   "organizations",
 			ReferencesColumns: []string{"id"},
 		},
-	}, act.ForeignKeys, "foreign keys mismatch")
+	}, act.Constraints.ForeignKeys, "foreign keys mismatch")
 }
 
 // TestAnalyzeSQL_DDL_AlterTableMultiAction checks ALTER TABLE with combined ADD and DROP actions.

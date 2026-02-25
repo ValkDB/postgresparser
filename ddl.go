@@ -55,10 +55,12 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 		action.Columns = make([]string, 0, len(tableElems))
 		action.ColumnDetails = make([]DDLColumn, 0, len(tableElems))
 		constraints := extractCreateTableConstraints(tableElems, tokens)
-		action.PrimaryKey = constraints.PrimaryKey
-		action.ForeignKeys = constraints.ForeignKeys
-		action.UniqueKeys = constraints.UniqueKeys
-		primaryKeyCols := createTablePrimaryKeyColumnSet(action.PrimaryKey)
+		action.Constraints = &DDLConstraints{
+			PrimaryKey:  constraints.PrimaryKey,
+			ForeignKeys: constraints.ForeignKeys,
+			UniqueKeys:  constraints.UniqueKeys,
+		}
+		primaryKeyCols := createTablePrimaryKeyColumnSet(action.Constraints.PrimaryKey)
 		var fieldCommentsByColumn map[string][]string
 		if opts.IncludeCreateTableFieldComments {
 			fieldCommentsByColumn = extractCreateTableFieldCommentsByColumn(tableElems, tokens)
@@ -601,14 +603,16 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 			addFlags := copyFlags(flags)
 			addFlags = append(addFlags, "ADD_CONSTRAINT")
 			result.DDLActions = append(result.DDLActions, DDLAction{
-				Type:        DDLAlterTable,
-				ObjectName:  tableName,
-				Schema:      tableSchema,
-				Columns:     collectAlterTableConstraintColumns(constraints.PrimaryKey, constraints.ForeignKeys),
-				PrimaryKey:  constraints.PrimaryKey,
-				ForeignKeys: constraints.ForeignKeys,
-				UniqueKeys:  constraints.UniqueKeys,
-				Flags:       addFlags,
+				Type:       DDLAlterTable,
+				ObjectName: tableName,
+				Schema:     tableSchema,
+				Columns:    collectAlterTableConstraintColumns(constraints.PrimaryKey, constraints.ForeignKeys),
+				Constraints: &DDLConstraints{
+					PrimaryKey:  constraints.PrimaryKey,
+					ForeignKeys: constraints.ForeignKeys,
+					UniqueKeys:  constraints.UniqueKeys,
+				},
+				Flags: addFlags,
 			})
 			return
 		}
