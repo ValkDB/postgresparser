@@ -328,6 +328,18 @@ CROSS JOIN settings s`
 	for _, name := range expectedTables {
 		assert.True(t, containsTable(ir.Tables, name), "expected table %q", name)
 	}
+
+	// Verify JoinType on each TableRef.
+	assert.Equal(t, "", ir.Tables[0].JoinType, "base FROM table has no join type")
+	assert.Equal(t, "INNER", ir.Tables[1].JoinType)
+	assert.Equal(t, "LEFT", ir.Tables[2].JoinType)
+	assert.Equal(t, "CROSS", ir.Tables[3].JoinType)
+
+	// Verify JoinCondition on each TableRef.
+	assert.Equal(t, "", ir.Tables[0].JoinCondition)
+	assert.Contains(t, ir.Tables[1].JoinCondition, "u.id = o.user_id")
+	assert.Contains(t, ir.Tables[2].JoinCondition, "o.product_id = p.id")
+	assert.Equal(t, "", ir.Tables[3].JoinCondition, "CROSS JOIN has no condition")
 }
 
 // TestIR_JoinUSING confirms JOIN with USING clause.
@@ -341,6 +353,10 @@ JOIN employees e USING (department_id)`
 	require.Len(t, ir.Tables, 2, "expected 2 tables")
 	require.Len(t, ir.JoinConditions, 1, "expected 1 join condition")
 	assert.Contains(t, strings.ToUpper(ir.JoinConditions[0]), "USING", "expected USING in join condition")
+
+	// Bare JOIN is reported as "JOIN".
+	assert.Equal(t, "JOIN", ir.Tables[1].JoinType)
+	assert.Contains(t, ir.Tables[1].JoinCondition, "USING")
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,6 +1041,9 @@ func TestIR_NaturalJoin(t *testing.T) {
 	require.Len(t, ir.Tables, 2, "expected 2 tables")
 	assert.True(t, containsTable(ir.Tables, "departments"), "expected departments")
 	assert.True(t, containsTable(ir.Tables, "employees"), "expected employees")
+
+	assert.Equal(t, "", ir.Tables[0].JoinType, "base table")
+	assert.Equal(t, "NATURAL", ir.Tables[1].JoinType)
 }
 
 // TestIR_SelfJoin confirms self-join produces two table references with distinct aliases.

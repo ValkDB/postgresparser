@@ -136,6 +136,88 @@ func TestAnalyze_JoinClauses_MultiColumnJoin(t *testing.T) {
 	assert.Contains(t, clause, "t2.b")
 }
 
+// TestAnalyze_JoinType_MultipleJoinTypes verifies that JoinType and JoinCondition
+// flow through the analysis layer on SQLTable for INNER, LEFT, and CROSS joins.
+func TestAnalyze_JoinType_MultipleJoinTypes(t *testing.T) {
+	sql := `SELECT u.id, o.id, p.name
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id
+LEFT JOIN products p ON o.product_id = p.id
+CROSS JOIN settings s`
+
+	result, err := AnalyzeSQL(sql)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.Len(t, result.Tables, 4)
+	assert.Equal(t, "", result.Tables[0].JoinType, "base FROM table")
+	assert.Equal(t, "INNER", result.Tables[1].JoinType)
+	assert.Equal(t, "LEFT", result.Tables[2].JoinType)
+	assert.Equal(t, "CROSS", result.Tables[3].JoinType)
+
+	assert.Equal(t, "", result.Tables[0].JoinCondition)
+	assert.Contains(t, result.Tables[1].JoinCondition, "u.id = o.user_id")
+	assert.Contains(t, result.Tables[2].JoinCondition, "o.product_id = p.id")
+	assert.Equal(t, "", result.Tables[3].JoinCondition)
+}
+
+// TestAnalyze_JoinType_RightAndFull verifies RIGHT and FULL join types.
+func TestAnalyze_JoinType_RightAndFull(t *testing.T) {
+	sql := `SELECT a.id, b.id, c.id
+FROM alpha a
+RIGHT JOIN beta b ON a.id = b.alpha_id
+FULL JOIN gamma c ON b.id = c.beta_id`
+
+	result, err := AnalyzeSQL(sql)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.Len(t, result.Tables, 3)
+	assert.Equal(t, "RIGHT", result.Tables[1].JoinType)
+	assert.Equal(t, "FULL", result.Tables[2].JoinType)
+}
+
+// TestAnalyze_JoinType_NaturalJoin verifies NATURAL join propagation.
+func TestAnalyze_JoinType_NaturalJoin(t *testing.T) {
+	sql := `SELECT * FROM departments NATURAL JOIN employees`
+
+	result, err := AnalyzeSQL(sql)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.GreaterOrEqual(t, len(result.Tables), 2)
+	assert.Equal(t, "", result.Tables[0].JoinType)
+	assert.Equal(t, "NATURAL", result.Tables[1].JoinType)
+	assert.Equal(t, "", result.Tables[1].JoinCondition, "NATURAL JOIN has no explicit condition")
+}
+
+// TestAnalyze_JoinType_USING verifies bare JOIN with USING clause.
+func TestAnalyze_JoinType_USING(t *testing.T) {
+	sql := `SELECT * FROM orders o JOIN customers c USING (customer_id)`
+
+	result, err := AnalyzeSQL(sql)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.Len(t, result.Tables, 2)
+	assert.Equal(t, "JOIN", result.Tables[1].JoinType)
+	assert.Contains(t, result.Tables[1].JoinCondition, "USING")
+}
+
+// TestAnalyze_JoinType_BaseTables verifies that BaseTables helper preserves JoinType.
+func TestAnalyze_JoinType_BaseTables(t *testing.T) {
+	sql := `SELECT u.id FROM users u INNER JOIN orders o ON u.id = o.user_id`
+
+	result, err := AnalyzeSQL(sql)
+	require.NoError(t, err)
+
+	baseTbls := BaseTables(result)
+	require.Len(t, baseTbls, 2)
+	assert.Equal(t, "", baseTbls[0].JoinType)
+	assert.Equal(t, "INNER", baseTbls[1].JoinType)
+	assert.Contains(t, baseTbls[1].JoinCondition, "u.id = o.user_id")
+}
+
 // =============================================================================
 // 3. Parameters -- verify parameter metadata extraction
 // =============================================================================

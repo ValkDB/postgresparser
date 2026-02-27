@@ -174,11 +174,13 @@ func convertTables(tbls []postgresparser.TableRef) []SQLTable {
 	out := make([]SQLTable, 0, len(tbls))
 	for _, t := range tbls {
 		out = append(out, SQLTable{
-			Schema: t.Schema,
-			Name:   t.Name,
-			Alias:  t.Alias,
-			Type:   SQLTableType(t.Type),
-			Raw:    t.Raw,
+			Schema:        t.Schema,
+			Name:          t.Name,
+			Alias:         t.Alias,
+			Type:          SQLTableType(t.Type),
+			Raw:           t.Raw,
+			JoinType:      t.JoinType,
+			JoinCondition: t.JoinCondition,
 		})
 	}
 	return out

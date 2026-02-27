@@ -341,6 +341,10 @@ INNER JOIN customers c ON o.customer_id = c.id AND c.status = 'active'`
 	joinExpr := normalise(ir.JoinConditions[0])
 	assert.Contains(t, joinExpr, "o.customer_id=c.id", "unexpected join expression")
 	assert.Contains(t, joinExpr, "c.status='active'", "unexpected join expression")
+
+	assert.Equal(t, "", ir.Tables[0].JoinType, "base table")
+	assert.Equal(t, "INNER", ir.Tables[1].JoinType)
+	assert.Contains(t, ir.Tables[1].JoinCondition, "o.customer_id = c.id")
 }
 
 // TestIR_LeftJoinWithFunctions ensures LEFT JOIN filters and expressions persist.
@@ -360,6 +364,51 @@ LEFT JOIN purchases p ON u.id = p.user_id AND p.amount > 0`
 
 	require.Len(t, ir.JoinConditions, 1, "expected 1 join condition")
 	assert.Contains(t, ir.JoinConditions[0], "p.amount > 0", "unexpected join condition")
+
+	assert.Equal(t, "LEFT", ir.Tables[1].JoinType)
+	assert.Contains(t, ir.Tables[1].JoinCondition, "u.id = p.user_id")
+}
+
+// TestIR_JoinTypeAllVariants covers RIGHT, FULL, LEFT OUTER, and NATURAL LEFT joins.
+func TestIR_JoinTypeAllVariants(t *testing.T) {
+	sql := `
+SELECT a.id, b.id, c.id, d.id, e.id
+FROM alpha a
+RIGHT JOIN beta b ON a.id = b.alpha_id
+FULL JOIN gamma c ON b.id = c.beta_id
+LEFT OUTER JOIN delta d ON c.id = d.gamma_id
+NATURAL LEFT JOIN epsilon e`
+	ir := parseAssertNoError(t, sql)
+
+	require.Len(t, ir.Tables, 5)
+	assert.Equal(t, "", ir.Tables[0].JoinType)
+	assert.Equal(t, "RIGHT", ir.Tables[1].JoinType)
+	assert.Equal(t, "FULL", ir.Tables[2].JoinType)
+	assert.Equal(t, "LEFT", ir.Tables[3].JoinType)
+	assert.Equal(t, "NATURAL LEFT", ir.Tables[4].JoinType)
+
+	assert.Contains(t, ir.Tables[1].JoinCondition, "a.id = b.alpha_id")
+	assert.Contains(t, ir.Tables[2].JoinCondition, "b.id = c.beta_id")
+	assert.Contains(t, ir.Tables[3].JoinCondition, "c.id = d.gamma_id")
+	assert.Equal(t, "", ir.Tables[4].JoinCondition, "NATURAL JOIN has no explicit condition")
+}
+
+// TestIR_JoinTypeIssue29Example reproduces the exact example from issue #29.
+func TestIR_JoinTypeIssue29Example(t *testing.T) {
+	sql := `
+SELECT posts.id, users.name
+FROM users
+INNER JOIN posts ON posts.user_id = users.id
+WHERE users.id = $1`
+	ir := parseAssertNoError(t, sql)
+
+	require.Len(t, ir.Tables, 2)
+	assert.Equal(t, "users", ir.Tables[0].Name)
+	assert.Equal(t, "", ir.Tables[0].JoinType)
+
+	assert.Equal(t, "posts", ir.Tables[1].Name)
+	assert.Equal(t, "INNER", ir.Tables[1].JoinType)
+	assert.Contains(t, ir.Tables[1].JoinCondition, "posts.user_id = users.id")
 }
 
 // TestIR_FallbackToUnknown confirms unsupported statements still return UNKNOWN.

@@ -408,8 +408,15 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 		}
 	}
 
-	for _, nested := range ref.AllTable_ref() {
+	metas := resolveJoinMeta(ref, tokens)
+	nestedRefs := ref.AllTable_ref()
+	for i, nested := range nestedRefs {
+		before := len(result.Tables)
 		collectTableRefs(result, nested, tokens, cteNames)
+		if i < len(metas) && before < len(result.Tables) {
+			result.Tables[before].JoinType = metas[i].joinType
+			result.Tables[before].JoinCondition = metas[i].joinCondition
+		}
 	}
 
 	for _, join := range ref.AllJoin_qual() {
@@ -427,6 +434,81 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 			findAndRecordUsage(result, joinCtx, ColumnUsageTypeJoin, tokens)
 		}
 	}
+}
+
+// joinMeta holds the resolved join type and condition for a nested table_ref.
+type joinMeta struct {
+	joinType      string
+	joinCondition string
+}
+
+// resolveJoinMeta walks the children of a table_ref node in parse order to
+// determine the join type and condition for each nested table_ref.
+// The returned slice is parallel to ref.AllTable_ref().
+func resolveJoinMeta(ref gen.ITable_refContext, tokens antlr.TokenStream) []joinMeta {
+	prc, ok := ref.(antlr.ParserRuleContext)
+	if !ok {
+		return nil
+	}
+
+	hasOpenParen := ref.OPEN_PAREN() != nil
+	seenFirstTableRef := false
+	pendingType := ""
+	var metas []joinMeta
+
+	for _, child := range prc.GetChildren() {
+		switch c := child.(type) {
+		case antlr.TerminalNode:
+			switch c.GetSymbol().GetTokenType() {
+			case gen.PostgreSQLParserCROSS:
+				pendingType = "CROSS"
+			case gen.PostgreSQLParserNATURAL:
+				pendingType = "NATURAL"
+			}
+		case *gen.Join_typeContext:
+			jt := joinTypeFromCtx(c)
+			if strings.HasPrefix(pendingType, "NATURAL") {
+				pendingType = "NATURAL " + jt
+			} else {
+				pendingType = jt
+			}
+		case *gen.Table_refContext:
+			if hasOpenParen && !seenFirstTableRef {
+				// Base table inside parentheses — no join type.
+				metas = append(metas, joinMeta{})
+				seenFirstTableRef = true
+			} else {
+				if pendingType == "" {
+					pendingType = "JOIN"
+				}
+				metas = append(metas, joinMeta{joinType: pendingType})
+			}
+			pendingType = ""
+		case *gen.Join_qualContext:
+			if len(metas) > 0 {
+				metas[len(metas)-1].joinCondition = strings.TrimSpace(ctxText(tokens, c))
+			}
+		}
+	}
+
+	return metas
+}
+
+// joinTypeFromCtx extracts a normalised join type string from a join_type rule context.
+func joinTypeFromCtx(ctx gen.IJoin_typeContext) string {
+	if ctx.FULL() != nil {
+		return "FULL"
+	}
+	if ctx.LEFT() != nil {
+		return "LEFT"
+	}
+	if ctx.RIGHT() != nil {
+		return "RIGHT"
+	}
+	if ctx.INNER_P() != nil {
+		return "INNER"
+	}
+	return ""
 }
 
 // extractWhereClause appends WHERE predicates to the ParsedQuery.

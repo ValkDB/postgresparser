@@ -54,11 +54,13 @@ const (
 
 // TableRef captures a table-like source referenced in a query.
 type TableRef struct {
-	Schema string
-	Name   string
-	Alias  string
-	Type   TableType
-	Raw    string
+	Schema        string
+	Name          string
+	Alias         string
+	Type          TableType
+	Raw           string
+	JoinType      string // "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "NATURAL", or "" for base FROM tables.
+	JoinCondition string // Raw ON/USING clause text, or "" for base/CROSS tables.
 }
 
 // SelectColumn captures the projection list of a SELECT query.

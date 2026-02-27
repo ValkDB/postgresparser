@@ -33,7 +33,7 @@ func BaseTables(a *SQLAnalysis) []SQLTable {
 			continue
 		}
 		seen[key] = struct{}{}
-		tables = append(tables, SQLTable{Schema: schema, Name: name, Alias: alias, Type: tbl.Type})
+		tables = append(tables, SQLTable{Schema: schema, Name: name, Alias: alias, Type: tbl.Type, JoinType: tbl.JoinType, JoinCondition: tbl.JoinCondition})
 	}
 	return tables
 }

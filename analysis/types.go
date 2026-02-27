@@ -30,11 +30,13 @@ const (
 
 // SQLTable describes a relation referenced in the query.
 type SQLTable struct {
-	Schema string
-	Name   string
-	Alias  string
-	Type   SQLTableType
-	Raw    string
+	Schema        string
+	Name          string
+	Alias         string
+	Type          SQLTableType
+	Raw           string
+	JoinType      string // "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "NATURAL", or "" for base FROM tables.
+	JoinCondition string // Raw ON/USING clause text, or "" for base/CROSS tables.
 }
 
 // SQLColumn records a projected expression and optional alias.
