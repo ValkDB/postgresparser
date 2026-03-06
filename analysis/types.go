@@ -206,11 +206,18 @@ type SQLDDLUniqueConstraint struct {
 	Columns        []string
 }
 
+// SQLDDLCheckConstraint describes a CHECK constraint expression.
+type SQLDDLCheckConstraint struct {
+	ConstraintName string
+	Expression     string
+}
+
 // SQLDDLConstraints bundles constraint metadata in DDL analysis results.
 type SQLDDLConstraints struct {
-	PrimaryKey  *SQLDDLPrimaryKey
-	ForeignKeys []SQLDDLForeignKey
-	UniqueKeys  []SQLDDLUniqueConstraint
+	PrimaryKey       *SQLDDLPrimaryKey
+	ForeignKeys      []SQLDDLForeignKey
+	UniqueKeys       []SQLDDLUniqueConstraint
+	CheckConstraints []SQLDDLCheckConstraint
 }
 
 // SQLDDLAction describes a single DDL operation in the analysis result.

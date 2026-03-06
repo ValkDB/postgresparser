@@ -463,9 +463,10 @@ func convertDDLConstraints(c *postgresparser.DDLConstraints) *SQLDDLConstraints 
 		return nil
 	}
 	return &SQLDDLConstraints{
-		PrimaryKey:  convertDDLPrimaryKey(c.PrimaryKey),
-		ForeignKeys: convertDDLForeignKeys(c.ForeignKeys),
-		UniqueKeys:  convertDDLUniqueKeys(c.UniqueKeys),
+		PrimaryKey:       convertDDLPrimaryKey(c.PrimaryKey),
+		ForeignKeys:      convertDDLForeignKeys(c.ForeignKeys),
+		UniqueKeys:       convertDDLUniqueKeys(c.UniqueKeys),
+		CheckConstraints: convertDDLCheckConstraints(c.CheckConstraints),
 	}
 }
 
@@ -510,6 +511,21 @@ func convertDDLUniqueKeys(uks []postgresparser.DDLUniqueConstraint) []SQLDDLUniq
 		out = append(out, SQLDDLUniqueConstraint{
 			ConstraintName: uk.ConstraintName,
 			Columns:        append([]string(nil), uk.Columns...),
+		})
+	}
+	return out
+}
+
+// convertDDLCheckConstraints maps parser CHECK constraint metadata into analysis DTOs.
+func convertDDLCheckConstraints(checks []postgresparser.DDLCheckConstraint) []SQLDDLCheckConstraint {
+	if len(checks) == 0 {
+		return nil
+	}
+	out := make([]SQLDDLCheckConstraint, 0, len(checks))
+	for _, c := range checks {
+		out = append(out, SQLDDLCheckConstraint{
+			ConstraintName: c.ConstraintName,
+			Expression:     c.Expression,
 		})
 	}
 	return out
