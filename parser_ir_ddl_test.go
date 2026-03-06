@@ -1387,3 +1387,136 @@ func TestIR_DDL_Truncate(t *testing.T) {
 		})
 	}
 }
+
+func TestIR_DDL_AlterTableAddConstraintCheck(t *testing.T) {
+	tests := []struct {
+		name           string
+		sql            string
+		wantObject     string
+		wantSchema     string
+		wantConstraint string
+		wantExpr       string
+	}{
+		{
+			name:           "simple CHECK",
+			sql:            `ALTER TABLE public.products ADD CONSTRAINT positive_price CHECK (price > 0);`,
+			wantObject:     "products",
+			wantSchema:     "public",
+			wantConstraint: "positive_price",
+			wantExpr:       "price > 0",
+		},
+		{
+			name:           "CHECK with AND",
+			sql:            `ALTER TABLE orders ADD CONSTRAINT valid_qty CHECK (quantity > 0 AND quantity < 10000);`,
+			wantObject:     "orders",
+			wantConstraint: "valid_qty",
+			wantExpr:       "quantity > 0 AND quantity < 10000",
+		},
+		{
+			name:           "CHECK with ONLY",
+			sql:            `ALTER TABLE ONLY public.store_settings ADD CONSTRAINT check_name CHECK (name <> '');`,
+			wantObject:     "store_settings",
+			wantSchema:     "public",
+			wantConstraint: "check_name",
+			wantExpr:       "name <> ''",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ir := parseAssertNoError(t, tc.sql)
+
+			assert.Equal(t, QueryCommandDDL, ir.Command)
+			require.Len(t, ir.DDLActions, 1)
+			act := ir.DDLActions[0]
+
+			assert.Equal(t, DDLAlterTable, act.Type)
+			assert.Equal(t, tc.wantObject, act.ObjectName)
+			assert.Equal(t, tc.wantSchema, act.Schema)
+			assert.Contains(t, act.Flags, "ADD_CONSTRAINT")
+
+			require.NotNil(t, act.Constraints)
+			require.Len(t, act.Constraints.CheckConstraints, 1)
+			check := act.Constraints.CheckConstraints[0]
+			assert.Equal(t, tc.wantConstraint, check.ConstraintName)
+			assert.Equal(t, tc.wantExpr, check.Expression)
+
+			assert.Nil(t, act.Constraints.PrimaryKey)
+			assert.Empty(t, act.Constraints.ForeignKeys)
+			assert.Empty(t, act.Constraints.UniqueKeys)
+		})
+	}
+}
+
+func TestIR_DDL_CreateTableWithCheckConstraint(t *testing.T) {
+	tests := []struct {
+		name           string
+		sql            string
+		wantChecks     int
+		wantConstraint string
+		wantExpr       string
+	}{
+		{
+			name: "table-level CHECK",
+			sql: `CREATE TABLE products (
+				id serial PRIMARY KEY,
+				price numeric,
+				CONSTRAINT positive_price CHECK (price > 0)
+			);`,
+			wantChecks:     1,
+			wantConstraint: "positive_price",
+			wantExpr:       "price > 0",
+		},
+		{
+			name: "inline column CHECK",
+			sql: `CREATE TABLE products (
+				id serial PRIMARY KEY,
+				price numeric CONSTRAINT positive_price CHECK (price > 0)
+			);`,
+			wantChecks:     1,
+			wantConstraint: "positive_price",
+			wantExpr:       "price > 0",
+		},
+		{
+			name: "unnamed inline CHECK",
+			sql: `CREATE TABLE products (
+				id serial PRIMARY KEY,
+				price numeric CHECK (price > 0)
+			);`,
+			wantChecks: 1,
+			wantExpr:   "price > 0",
+		},
+		{
+			name: "multiple CHECK constraints",
+			sql: `CREATE TABLE products (
+				id serial PRIMARY KEY,
+				price numeric,
+				quantity integer,
+				CONSTRAINT positive_price CHECK (price > 0),
+				CONSTRAINT valid_qty CHECK (quantity >= 0)
+			);`,
+			wantChecks: 2,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ir := parseAssertNoError(t, tc.sql)
+
+			assert.Equal(t, QueryCommandDDL, ir.Command)
+			require.Len(t, ir.DDLActions, 1)
+			act := ir.DDLActions[0]
+			assert.Equal(t, DDLCreateTable, act.Type)
+
+			require.NotNil(t, act.Constraints)
+			require.Len(t, act.Constraints.CheckConstraints, tc.wantChecks)
+
+			if tc.wantConstraint != "" {
+				assert.Equal(t, tc.wantConstraint, act.Constraints.CheckConstraints[0].ConstraintName)
+			}
+			if tc.wantExpr != "" {
+				assert.Equal(t, tc.wantExpr, act.Constraints.CheckConstraints[0].Expression)
+			}
+		})
+	}
+}

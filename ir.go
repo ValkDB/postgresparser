@@ -172,12 +172,19 @@ type DDLUniqueConstraint struct {
 	Columns        []string
 }
 
+// DDLCheckConstraint describes a CHECK constraint expression.
+type DDLCheckConstraint struct {
+	ConstraintName string
+	Expression     string
+}
+
 // DDLConstraints bundles constraint metadata extracted from CREATE TABLE or
 // ALTER TABLE ... ADD CONSTRAINT.
 type DDLConstraints struct {
-	PrimaryKey  *DDLPrimaryKey
-	ForeignKeys []DDLForeignKey
-	UniqueKeys  []DDLUniqueConstraint
+	PrimaryKey       *DDLPrimaryKey
+	ForeignKeys      []DDLForeignKey
+	UniqueKeys       []DDLUniqueConstraint
+	CheckConstraints []DDLCheckConstraint
 }
 
 // DDLAction describes a single DDL operation extracted from a statement.

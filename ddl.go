@@ -56,9 +56,10 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 		action.ColumnDetails = make([]DDLColumn, 0, len(tableElems))
 		constraints := extractCreateTableConstraints(tableElems, tokens)
 		action.Constraints = &DDLConstraints{
-			PrimaryKey:  constraints.PrimaryKey,
-			ForeignKeys: constraints.ForeignKeys,
-			UniqueKeys:  constraints.UniqueKeys,
+			PrimaryKey:       constraints.PrimaryKey,
+			ForeignKeys:      constraints.ForeignKeys,
+			UniqueKeys:       constraints.UniqueKeys,
+			CheckConstraints: constraints.CheckConstraints,
 		}
 		primaryKeyCols := createTablePrimaryKeyColumnSet(action.Constraints.PrimaryKey)
 		var fieldCommentsByColumn map[string][]string
@@ -138,9 +139,10 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 // tableConstraints bundles constraint metadata extracted from CREATE TABLE or
 // ALTER TABLE ... ADD CONSTRAINT.
 type tableConstraints struct {
-	PrimaryKey  *DDLPrimaryKey
-	ForeignKeys []DDLForeignKey
-	UniqueKeys  []DDLUniqueConstraint
+	PrimaryKey       *DDLPrimaryKey
+	ForeignKeys      []DDLForeignKey
+	UniqueKeys       []DDLUniqueConstraint
+	CheckConstraints []DDLCheckConstraint
 }
 
 func (tc *tableConstraints) merge(other tableConstraints) {
@@ -150,6 +152,7 @@ func (tc *tableConstraints) merge(other tableConstraints) {
 	}
 	tc.ForeignKeys = append(tc.ForeignKeys, other.ForeignKeys...)
 	tc.UniqueKeys = append(tc.UniqueKeys, other.UniqueKeys...)
+	tc.CheckConstraints = append(tc.CheckConstraints, other.CheckConstraints...)
 }
 
 // extractCreateTableConstraints extracts CREATE TABLE PK/FK/UNIQUE
@@ -231,6 +234,19 @@ func extractCreateTableColumnConstraints(colDef gen.IColumnDefContext, tokens an
 				tokens,
 			))
 		}
+
+		if elem.CHECK() != nil && elem.A_expr() != nil {
+			expr := ""
+			if prc, ok := elem.A_expr().(antlr.ParserRuleContext); ok {
+				expr = strings.TrimSpace(ctxText(tokens, prc))
+			}
+			if expr != "" {
+				out.CheckConstraints = append(out.CheckConstraints, DDLCheckConstraint{
+					ConstraintName: constraintName,
+					Expression:     expr,
+				})
+			}
+		}
 	}
 
 	return out
@@ -276,6 +292,19 @@ func extractCreateTableTableConstraint(tableConstraint gen.ITableconstraintConte
 			elem.Key_actions(),
 			tokens,
 		))
+	}
+
+	if elem.CHECK() != nil && elem.A_expr() != nil {
+		expr := ""
+		if prc, ok := elem.A_expr().(antlr.ParserRuleContext); ok {
+			expr = strings.TrimSpace(ctxText(tokens, prc))
+		}
+		if expr != "" {
+			out.CheckConstraints = append(out.CheckConstraints, DDLCheckConstraint{
+				ConstraintName: constraintName,
+				Expression:     expr,
+			})
+		}
 	}
 
 	return out
@@ -595,7 +624,7 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 		if tableConstraint := cmd.Tableconstraint(); tableConstraint != nil {
 			constraints := extractCreateTableTableConstraint(tableConstraint, tokens)
 			if constraints.PrimaryKey == nil && len(constraints.ForeignKeys) == 0 &&
-				len(constraints.UniqueKeys) == 0 {
+				len(constraints.UniqueKeys) == 0 && len(constraints.CheckConstraints) == 0 {
 				// Ignore unsupported ADD CONSTRAINT kinds (EXCLUDE).
 				return
 			}
@@ -608,9 +637,10 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 				Schema:     tableSchema,
 				Columns:    collectAlterTableConstraintColumns(constraints.PrimaryKey, constraints.ForeignKeys),
 				Constraints: &DDLConstraints{
-					PrimaryKey:  constraints.PrimaryKey,
-					ForeignKeys: constraints.ForeignKeys,
-					UniqueKeys:  constraints.UniqueKeys,
+					PrimaryKey:       constraints.PrimaryKey,
+					ForeignKeys:      constraints.ForeignKeys,
+					UniqueKeys:       constraints.UniqueKeys,
+					CheckConstraints: constraints.CheckConstraints,
 				},
 				Flags: addFlags,
 			})
