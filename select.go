@@ -285,6 +285,7 @@ func extractProjection(result *ParsedQuery, simple gen.ISimple_select_pramaryCon
 					expr = strings.TrimSpace(ctxText(tokens, prc))
 				}
 				findAndRecordUsage(result, col.A_expr(), ColumnUsageTypeProjection, tokens)
+				extractExpressionSubqueries(result, col.A_expr(), tokens)
 			}
 			alias := ""
 			switch {
@@ -401,8 +402,9 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 			Type:  TableTypeSubquery,
 			Raw:   raw,
 		})
-		// Use buildSubqueryRefWithResult to propagate column usage from nested subqueries
-		if subRef, err := buildSubqueryRefWithResult(alias, sub, tokens, result); err == nil && subRef != nil {
+		// Build nested subquery analysis without flattening inner column usage
+		// into the parent query scope.
+		if subRef, err := buildSubqueryRef(alias, sub, tokens); err == nil && subRef != nil {
 			result.Subqueries = append(result.Subqueries, *subRef)
 			appendSetOpTables(result, nil, subRef.Query.Tables)
 		}
@@ -523,6 +525,7 @@ func extractWhereClause(result *ParsedQuery, whereCtx gen.IWhere_clauseContext, 
 		}
 		clauseText := strings.TrimSpace(ctxText(tokens, prc))
 		result.Where = append(result.Where, clauseText)
+		extractExpressionSubqueries(result, expr, tokens)
 		// Use the new comparison-aware extraction for WHERE clauses
 		findAndRecordComparisons(result, expr, ColumnUsageTypeFilter, tokens)
 	}
@@ -537,6 +540,7 @@ func extractHavingClause(result *ParsedQuery, havingCtx gen.IHaving_clauseContex
 		if prc, ok := expr.(antlr.ParserRuleContext); ok {
 			result.Having = append(result.Having, strings.TrimSpace(ctxText(tokens, prc)))
 		}
+		extractExpressionSubqueries(result, expr, tokens)
 		// Use the new comparison-aware extraction for HAVING clauses
 		findAndRecordComparisons(result, expr, ColumnUsageTypeFilter, tokens)
 	}

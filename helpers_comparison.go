@@ -23,13 +23,31 @@ type comparisonInfo struct {
 // to properly extract operators from deeply nested parse trees.
 type comprehensiveComparisonCollector struct {
 	*gen.BasePostgreSQLParserListener
-	comparisons []comparisonInfo
-	tokens      antlr.TokenStream
+	comparisons   []comparisonInfo
+	tokens        antlr.TokenStream
+	subqueryDepth int
+}
+
+// EnterSelect_with_parens increments nested subquery depth so outer comparison
+// extraction ignores inner SELECT bodies.
+func (c *comprehensiveComparisonCollector) EnterSelect_with_parens(ctx *gen.Select_with_parensContext) {
+	c.subqueryDepth++
+}
+
+// ExitSelect_with_parens decrements nested subquery depth after leaving an
+// inner SELECT body.
+func (c *comprehensiveComparisonCollector) ExitSelect_with_parens(ctx *gen.Select_with_parensContext) {
+	if c.subqueryDepth > 0 {
+		c.subqueryDepth--
+	}
 }
 
 // EnterA_expr_compare handles comparison operators like >, <, =, etc.
 func (c *comprehensiveComparisonCollector) EnterA_expr_compare(ctx *gen.A_expr_compareContext) {
 	if ctx == nil {
+		return
+	}
+	if c.subqueryDepth > 0 {
 		return
 	}
 
@@ -66,6 +84,9 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_compare(ctx *gen.A_expr_c
 // EnterA_expr_like handles LIKE and ILIKE operators
 func (c *comprehensiveComparisonCollector) EnterA_expr_like(ctx *gen.A_expr_likeContext) {
 	if ctx == nil {
+		return
+	}
+	if c.subqueryDepth > 0 {
 		return
 	}
 
@@ -110,6 +131,9 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_in(ctx *gen.A_expr_inCont
 	if ctx == nil {
 		return
 	}
+	if c.subqueryDepth > 0 {
+		return
+	}
 
 	exprText := ctxText(c.tokens, ctx)
 	operator := ""
@@ -152,6 +176,9 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_between(ctx *gen.A_expr_b
 	if ctx == nil {
 		return
 	}
+	if c.subqueryDepth > 0 {
+		return
+	}
 
 	exprText := ctxText(c.tokens, ctx)
 	operator := ""
@@ -192,6 +219,9 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_between(ctx *gen.A_expr_b
 // EnterA_expr_isnull handles IS NULL and IS NOT NULL
 func (c *comprehensiveComparisonCollector) EnterA_expr_isnull(ctx *gen.A_expr_isnullContext) {
 	if ctx == nil {
+		return
+	}
+	if c.subqueryDepth > 0 {
 		return
 	}
 
@@ -264,6 +294,9 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_is_not(ctx *gen.A_expr_is
 	if ctx == nil {
 		return
 	}
+	if c.subqueryDepth > 0 {
+		return
+	}
 
 	exprText := ctxText(c.tokens, ctx)
 	operator := ""
@@ -315,6 +348,9 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_is_not(ctx *gen.A_expr_is
 // EnterA_expr_qual_op handles qualified operators (schema.operator)
 func (c *comprehensiveComparisonCollector) EnterA_expr_qual_op(ctx *gen.A_expr_qual_opContext) {
 	if ctx == nil {
+		return
+	}
+	if c.subqueryDepth > 0 {
 		return
 	}
 

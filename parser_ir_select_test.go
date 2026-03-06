@@ -57,6 +57,59 @@ func TestIR_AggregateFunctions(t *testing.T) {
 	assert.Equal(t, "status='shipped'", normalise(ir.Where[0]), "unexpected WHERE clause")
 }
 
+// TestIR_SubqueryInWhere_ScopesColumnUsage ensures scalar subqueries in WHERE
+// populate Subqueries and keep inner ColumnUsage out of the outer query scope.
+func TestIR_SubqueryInWhere_ScopesColumnUsage(t *testing.T) {
+	sql := `SELECT id, name FROM users WHERE id IN (SELECT user_id FROM orders WHERE total > 500)`
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandSelect, ir.Command, "expected command SELECT")
+	require.Len(t, ir.Tables, 1, "expected only outer table")
+	assert.Equal(t, "users", ir.Tables[0].Name, "unexpected outer table")
+
+	require.Len(t, ir.Subqueries, 1, "expected one scalar subquery")
+	assert.Empty(t, ir.Subqueries[0].Alias, "expected empty alias for scalar subquery")
+	require.NotNil(t, ir.Subqueries[0].Query, "expected parsed subquery")
+	assert.True(t, containsTable(ir.Subqueries[0].Query.Tables, "orders"), "expected orders table in subquery")
+
+	var outerHasIDProjection, outerHasNameProjection, outerHasIDFilter bool
+	var outerHasUserID, outerHasTotal bool
+	for _, usage := range ir.ColumnUsage {
+		if usage.Column == "id" && usage.UsageType == ColumnUsageTypeProjection {
+			outerHasIDProjection = true
+		}
+		if usage.Column == "name" && usage.UsageType == ColumnUsageTypeProjection {
+			outerHasNameProjection = true
+		}
+		if usage.Column == "id" && usage.UsageType == ColumnUsageTypeFilter {
+			outerHasIDFilter = true
+		}
+		if usage.Column == "user_id" {
+			outerHasUserID = true
+		}
+		if usage.Column == "total" {
+			outerHasTotal = true
+		}
+	}
+	assert.True(t, outerHasIDProjection, "expected outer projection usage for id")
+	assert.True(t, outerHasNameProjection, "expected outer projection usage for name")
+	assert.True(t, outerHasIDFilter, "expected outer filter usage for id")
+	assert.False(t, outerHasUserID, "unexpected leaked subquery column user_id in outer scope")
+	assert.False(t, outerHasTotal, "unexpected leaked subquery column total in outer scope")
+
+	var innerHasUserIDProjection, innerHasTotalFilter bool
+	for _, usage := range ir.Subqueries[0].Query.ColumnUsage {
+		if usage.Column == "user_id" && usage.UsageType == ColumnUsageTypeProjection {
+			innerHasUserIDProjection = true
+		}
+		if usage.Column == "total" && usage.UsageType == ColumnUsageTypeFilter {
+			innerHasTotalFilter = true
+		}
+	}
+	assert.True(t, innerHasUserIDProjection, "expected user_id projection usage in subquery scope")
+	assert.True(t, innerHasTotalFilter, "expected total filter usage in subquery scope")
+}
+
 // TestIR_ArithmeticInProjection checks arithmetic expressions in projections.
 func TestIR_ArithmeticInProjection(t *testing.T) {
 	sql := `SELECT price * quantity AS total_cost FROM orders`

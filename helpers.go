@@ -23,11 +23,29 @@ type columnRef struct {
 // columnRefCollector walks the subtree and records every column reference encountered.
 type columnRefCollector struct {
 	*gen.BasePostgreSQLParserListener
-	refs []*gen.ColumnrefContext
+	refs          []*gen.ColumnrefContext
+	subqueryDepth int
 }
 
 func (c *columnRefCollector) EnterColumnref(ctx *gen.ColumnrefContext) {
+	if c.subqueryDepth > 0 {
+		return
+	}
 	c.refs = append(c.refs, ctx)
+}
+
+// EnterSelect_with_parens increments nested subquery depth so outer scope
+// usage collection ignores inner SELECT bodies.
+func (c *columnRefCollector) EnterSelect_with_parens(ctx *gen.Select_with_parensContext) {
+	c.subqueryDepth++
+}
+
+// ExitSelect_with_parens decrements nested subquery depth after leaving an
+// inner SELECT body.
+func (c *columnRefCollector) ExitSelect_with_parens(ctx *gen.Select_with_parensContext) {
+	if c.subqueryDepth > 0 {
+		c.subqueryDepth--
+	}
 }
 
 // windowClauseCollector walks the subtree and records window function OVER clauses.
@@ -38,6 +56,30 @@ type windowClauseCollector struct {
 
 func (w *windowClauseCollector) EnterOver_clause(ctx *gen.Over_clauseContext) {
 	w.overClauses = append(w.overClauses, ctx)
+}
+
+// expressionSubqueryCollector records only direct subqueries for the current
+// expression scope, leaving nested subqueries to the subquery's own ParsedQuery.
+type expressionSubqueryCollector struct {
+	*gen.BasePostgreSQLParserListener
+	subqueries    []gen.ISelect_with_parensContext
+	subqueryDepth int
+}
+
+// EnterSelect_with_parens records only direct subqueries in the current
+// expression and defers nested ones to the subquery's own parse pass.
+func (c *expressionSubqueryCollector) EnterSelect_with_parens(ctx *gen.Select_with_parensContext) {
+	if c.subqueryDepth == 0 {
+		c.subqueries = append(c.subqueries, ctx)
+	}
+	c.subqueryDepth++
+}
+
+// ExitSelect_with_parens decrements the current nested subquery depth.
+func (c *expressionSubqueryCollector) ExitSelect_with_parens(ctx *gen.Select_with_parensContext) {
+	if c.subqueryDepth > 0 {
+		c.subqueryDepth--
+	}
 }
 
 // findAndRecordUsage finds all column references within a given context and adds them to the ParsedQuery with the specified role.
@@ -84,6 +126,30 @@ func findAndRecordUsage(result *ParsedQuery, ctx antlr.RuleContext, role ColumnU
 		usage.Functions = extractFunctionsFromContext(ctx, colCtx, tokens)
 
 		result.ColumnUsage = append(result.ColumnUsage, usage)
+	}
+}
+
+// extractExpressionSubqueries captures direct scalar subqueries in an
+// expression and stores them under result.Subqueries without flattening their
+// nested ColumnUsage into the parent query.
+func extractExpressionSubqueries(result *ParsedQuery, ctx antlr.RuleContext, tokens antlr.TokenStream) {
+	if result == nil || ctx == nil {
+		return
+	}
+
+	tree, ok := ctx.(antlr.ParseTree)
+	if !ok {
+		return
+	}
+
+	collector := &expressionSubqueryCollector{BasePostgreSQLParserListener: &gen.BasePostgreSQLParserListener{}}
+	antlr.ParseTreeWalkerDefault.Walk(collector, tree)
+	for _, selectWithParens := range collector.subqueries {
+		subRef, err := buildSubqueryRef("", selectWithParens, tokens)
+		if err != nil || subRef == nil {
+			continue
+		}
+		result.Subqueries = append(result.Subqueries, *subRef)
 	}
 }
 

@@ -372,6 +372,64 @@ func TestAnalyze_Subqueries_DerivedTable(t *testing.T) {
 	assert.Equal(t, "name", sub.Analysis.Columns[1].Expression)
 }
 
+// TestAnalyze_Subqueries_ScalarWhereScope verifies that scalar subqueries in
+// WHERE clauses are captured under Subqueries and do not leak inner ColumnUsage
+// into the outer analysis scope.
+func TestAnalyze_Subqueries_ScalarWhereScope(t *testing.T) {
+	sql := `SELECT id, name FROM users WHERE id IN (SELECT user_id FROM orders WHERE total > 500)`
+
+	result, err := AnalyzeSQL(sql)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.Len(t, result.Tables, 1, "Outer analysis should reference only the users table")
+	assert.Equal(t, "users", result.Tables[0].Name)
+
+	require.Len(t, result.Subqueries, 1, "Should detect one scalar subquery")
+	sub := result.Subqueries[0]
+	assert.Equal(t, "", sub.Alias, "Scalar subquery alias should be empty")
+	require.NotNil(t, sub.Analysis, "Scalar subquery analysis should not be nil")
+	require.Len(t, sub.Analysis.Tables, 1, "Nested analysis should reference one table")
+	assert.Equal(t, "orders", sub.Analysis.Tables[0].Name)
+
+	var outerHasIDProjection, outerHasNameProjection, outerHasIDFilter bool
+	var outerHasUserID, outerHasTotal bool
+	for _, usage := range result.ColumnUsage {
+		if usage.Column == "id" && usage.UsageType == SQLUsageTypeProjection {
+			outerHasIDProjection = true
+		}
+		if usage.Column == "name" && usage.UsageType == SQLUsageTypeProjection {
+			outerHasNameProjection = true
+		}
+		if usage.Column == "id" && usage.UsageType == SQLUsageTypeFilter {
+			outerHasIDFilter = true
+		}
+		if usage.Column == "user_id" {
+			outerHasUserID = true
+		}
+		if usage.Column == "total" {
+			outerHasTotal = true
+		}
+	}
+	assert.True(t, outerHasIDProjection, "Outer analysis should include projection usage for id")
+	assert.True(t, outerHasNameProjection, "Outer analysis should include projection usage for name")
+	assert.True(t, outerHasIDFilter, "Outer analysis should include filter usage for id")
+	assert.False(t, outerHasUserID, "Subquery column user_id should not leak into outer scope")
+	assert.False(t, outerHasTotal, "Subquery column total should not leak into outer scope")
+
+	var innerHasUserIDProjection, innerHasTotalFilter bool
+	for _, usage := range sub.Analysis.ColumnUsage {
+		if usage.Column == "user_id" && usage.UsageType == SQLUsageTypeProjection {
+			innerHasUserIDProjection = true
+		}
+		if usage.Column == "total" && usage.UsageType == SQLUsageTypeFilter {
+			innerHasTotalFilter = true
+		}
+	}
+	assert.True(t, innerHasUserIDProjection, "Nested analysis should include projection usage for user_id")
+	assert.True(t, innerHasTotalFilter, "Nested analysis should include filter usage for total")
+}
+
 // TestAnalyze_Subqueries_LateralWithNestedAnalysis verifies that a LATERAL
 // subquery captures nested analysis with its own tables, columns, and filters.
 func TestAnalyze_Subqueries_LateralWithNestedAnalysis(t *testing.T) {

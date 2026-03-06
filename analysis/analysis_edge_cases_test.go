@@ -317,7 +317,7 @@ func TestAnalyzeNestedSubqueries(t *testing.T) {
 	// Should detect nested structure
 	assert.NotEmpty(t, result.Subqueries, "Should detect subqueries")
 
-	// Should find filter columns at various levels
+	// Outer scope should keep only outer-level filter usage.
 	var hasCountryFilter, hasItemCountFilter bool
 	for _, usage := range result.ColumnUsage {
 		if usage.UsageType == SQLUsageTypeFilter {
@@ -329,9 +329,27 @@ func TestAnalyzeNestedSubqueries(t *testing.T) {
 			}
 		}
 	}
-	assert.True(t, hasCountryFilter, "Should detect country filter in nested subquery")
-	// item_count might not be detected as it's from derived table
+	assert.False(t, hasCountryFilter, "Nested country filter should not leak into outer scope")
 	_ = hasItemCountFilter
+
+	var nestedHasCountryFilter func(subqueries []SQLSubquery) bool
+	nestedHasCountryFilter = func(subqueries []SQLSubquery) bool {
+		for _, sub := range subqueries {
+			if sub.Analysis == nil {
+				continue
+			}
+			for _, usage := range sub.Analysis.ColumnUsage {
+				if usage.UsageType == SQLUsageTypeFilter && usage.Column == "country" {
+					return true
+				}
+			}
+			if nestedHasCountryFilter(sub.Analysis.Subqueries) {
+				return true
+			}
+		}
+		return false
+	}
+	assert.True(t, nestedHasCountryFilter(result.Subqueries), "Should detect country filter inside nested subquery scope")
 }
 
 // TestAnalyzeLateralJoin validates correlated LATERAL subquery detection.
@@ -351,18 +369,33 @@ func TestAnalyzeLateralJoin(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// LATERAL might be treated as subquery or function
-	assert.GreaterOrEqual(t, len(result.Tables), 1)
+	require.NotEmpty(t, result.Subqueries, "Should detect the LATERAL subquery")
 
-	// Should detect correlation
-	var hasUserIdUsage bool
+	var outerHasUserID bool
 	for _, usage := range result.ColumnUsage {
 		if usage.Column == "user_id" {
-			hasUserIdUsage = true
+			outerHasUserID = true
 			break
 		}
 	}
-	assert.True(t, hasUserIdUsage, "Should detect correlated user_id")
+	assert.False(t, outerHasUserID, "Inner LATERAL usage should not leak into outer scope")
+
+	var nestedHasUserID, nestedHasOuterID bool
+	for _, sub := range result.Subqueries {
+		if sub.Analysis == nil {
+			continue
+		}
+		for _, usage := range sub.Analysis.ColumnUsage {
+			if usage.UsageType == SQLUsageTypeFilter && usage.TableAlias == "o" && usage.Column == "user_id" {
+				nestedHasUserID = true
+			}
+			if usage.UsageType == SQLUsageTypeFilter && usage.TableAlias == "u" && usage.Column == "id" {
+				nestedHasOuterID = true
+			}
+		}
+	}
+	assert.True(t, nestedHasUserID, "Nested LATERAL analysis should capture orders.user_id")
+	assert.True(t, nestedHasOuterID, "Nested LATERAL analysis should capture correlated outer alias usage")
 }
 
 // TestAnalyzeInsertMultipleValues verifies multi-row INSERT with ON CONFLICT and RETURNING.

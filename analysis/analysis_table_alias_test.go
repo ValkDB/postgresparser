@@ -42,7 +42,7 @@ func TestAnalyze_PreserveTableAlias(t *testing.T) {
 }
 
 // TestAnalyze_PreserveTableAliasInSubquery tests that table aliases are preserved
-// in IN subqueries that reference the same column name from different contexts.
+// in IN subqueries without leaking inner filter usage into the outer scope.
 func TestAnalyze_PreserveTableAliasInSubquery(t *testing.T) {
 	sql := `SELECT * FROM orders o
 		WHERE o.customer_id IN (
@@ -53,29 +53,27 @@ func TestAnalyze_PreserveTableAliasInSubquery(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Find all filter usages for "status" column
-	var statusFilters []SQLColumnUsage
+	// Outer scope should keep only the orders.status filter.
+	var outerStatusFilters []SQLColumnUsage
 	for _, usage := range result.ColumnUsage {
 		if usage.UsageType == SQLUsageTypeFilter && usage.Column == "status" {
-			statusFilters = append(statusFilters, usage)
+			outerStatusFilters = append(outerStatusFilters, usage)
 		}
 	}
+	require.Len(t, outerStatusFilters, 1, "Outer scope should keep only one status filter")
+	assert.Equal(t, "o", outerStatusFilters[0].TableAlias, "Outer status filter should keep alias 'o'")
 
-	// We should have TWO separate filter entries for status
-	assert.GreaterOrEqual(t, len(statusFilters), 2, "Should have at least two status filter entries")
+	require.Len(t, result.Subqueries, 1, "Should capture the IN subquery")
+	require.NotNil(t, result.Subqueries[0].Analysis, "Subquery analysis should be present")
 
-	// Check that at least one has table alias 'o' and one has 'c'
-	var hasO, hasC bool
-	for _, filter := range statusFilters {
-		if filter.TableAlias == "o" {
-			hasO = true
-		}
-		if filter.TableAlias == "c" {
-			hasC = true
+	var nestedStatusFilters []SQLColumnUsage
+	for _, usage := range result.Subqueries[0].Analysis.ColumnUsage {
+		if usage.UsageType == SQLUsageTypeFilter && usage.Column == "status" {
+			nestedStatusFilters = append(nestedStatusFilters, usage)
 		}
 	}
-	assert.True(t, hasO, "Should have status filter with alias 'o'")
-	assert.True(t, hasC, "Should have status filter with alias 'c'")
+	require.Len(t, nestedStatusFilters, 1, "Nested scope should keep the customer status filter")
+	assert.Equal(t, "c", nestedStatusFilters[0].TableAlias, "Nested status filter should keep alias 'c'")
 }
 
 // TestAnalyze_MultipleOperatorsOnSameColumn tests that multiple operators on the same column
