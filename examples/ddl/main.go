@@ -15,10 +15,20 @@ func main() {
     name text,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );`
+	createWithChecks := `CREATE TABLE public.store_settings (
+    id boolean DEFAULT true NOT NULL,
+    active_languages text[] NOT NULL,
+    default_language text NOT NULL,
+    max_players_per_team integer NOT NULL,
+    timezone text NOT NULL,
+    CONSTRAINT store_settings_check CHECK ((default_language = ANY (active_languages))),
+    CONSTRAINT store_settings_id_check CHECK ((id = true))
+);`
 	alterSQL := `ALTER TABLE public.users ADD COLUMN status text`
 	deleteSQL := `DELETE FROM public.users WHERE id = 42`
 
 	printParsed("CREATE TABLE", createSQL)
+	printParsed("CREATE TABLE WITH CHECK", createWithChecks)
 	printParsed("ALTER TABLE", alterSQL)
 	printParsed("DELETE", deleteSQL)
 }
@@ -40,6 +50,11 @@ func printParsed(label, sql string) {
 		}
 		for _, col := range action.ColumnDetails {
 			fmt.Printf("  - %s %s nullable=%t default=%q\n", col.Name, col.Type, col.Nullable, col.Default)
+		}
+		if action.Constraints != nil {
+			for _, chk := range action.Constraints.CheckConstraints {
+				fmt.Printf("  CHECK %q: %s\n", chk.ConstraintName, chk.Expression)
+			}
 		}
 	}
 	if len(result.Where) > 0 {

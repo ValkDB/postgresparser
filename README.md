@@ -72,7 +72,7 @@ go get github.com/valkdb/postgresparser
 Handles the SQL you actually write in production:
 
 - **DML**: SELECT, INSERT, UPDATE, DELETE, MERGE
-- **DDL**: CREATE TABLE (columns/type/nullability/default + PK/FK/UNIQUE constraints), CREATE INDEX, DROP TABLE/INDEX, ALTER TABLE, TRUNCATE, COMMENT ON
+- **DDL**: CREATE TABLE (columns/type/nullability/default + PK/FK/UNIQUE/CHECK constraints), CREATE INDEX, DROP TABLE/INDEX, ALTER TABLE, TRUNCATE, COMMENT ON
 - **CTEs**: `WITH ... AS` including `RECURSIVE`, materialization hints
 - **JOINs**: INNER, LEFT, RIGHT, FULL, CROSS, NATURAL, LATERAL
 - **Subqueries**: in SELECT, FROM, WHERE, and HAVING

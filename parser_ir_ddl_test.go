@@ -1497,6 +1497,41 @@ func TestIR_DDL_CreateTableWithCheckConstraint(t *testing.T) {
 			);`,
 			wantChecks: 2,
 		},
+		{
+			name: "issue #32 — pg_dump style with ANY()",
+			sql: `CREATE TABLE public.store_settings (
+				id boolean DEFAULT true NOT NULL,
+				active_languages text[] NOT NULL,
+				default_language text NOT NULL,
+				max_players_per_team integer NOT NULL,
+				timezone text NOT NULL,
+				CONSTRAINT store_settings_check CHECK ((default_language = ANY (active_languages))),
+				CONSTRAINT store_settings_id_check CHECK ((id = true))
+			);`,
+			wantChecks:     2,
+			wantConstraint: "store_settings_check",
+			wantExpr:       "(default_language = ANY (active_languages))",
+		},
+		{
+			name: "CHECK with boolean expression and nested parens",
+			sql: `CREATE TABLE public.events (
+				start_date date NOT NULL,
+				end_date date NOT NULL,
+				CONSTRAINT valid_dates CHECK ((end_date > start_date))
+			);`,
+			wantChecks:     1,
+			wantConstraint: "valid_dates",
+			wantExpr:       "(end_date > start_date)",
+		},
+		{
+			name: "CHECK with OR and function call",
+			sql: `CREATE TABLE public.users (
+				email text NOT NULL,
+				CONSTRAINT valid_email CHECK ((email ~~ '%@%'::text) OR (length(email) > 5))
+			);`,
+			wantChecks:     1,
+			wantConstraint: "valid_email",
+		},
 	}
 
 	for _, tc := range tests {
@@ -1519,4 +1554,45 @@ func TestIR_DDL_CreateTableWithCheckConstraint(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestIR_DDL_Issue32_StoreSettingsCheck validates the exact SQL from issue #32.
+func TestIR_DDL_Issue32_StoreSettingsCheck(t *testing.T) {
+	sql := `CREATE TABLE public.store_settings (
+    id boolean DEFAULT true NOT NULL,
+    active_languages text[] NOT NULL,
+    default_language text NOT NULL,
+    max_players_per_team integer NOT NULL,
+    timezone text NOT NULL,
+    CONSTRAINT store_settings_check CHECK ((default_language = ANY (active_languages))),
+    CONSTRAINT store_settings_id_check CHECK ((id = true))
+);`
+
+	ir := parseAssertNoError(t, sql)
+
+	assert.Equal(t, QueryCommandDDL, ir.Command)
+	require.Len(t, ir.DDLActions, 1)
+	act := ir.DDLActions[0]
+
+	assert.Equal(t, DDLCreateTable, act.Type)
+	assert.Equal(t, "store_settings", act.ObjectName)
+	assert.Equal(t, "public", act.Schema)
+
+	// Verify columns
+	require.Len(t, act.ColumnDetails, 5)
+	assert.Equal(t, "id", act.ColumnDetails[0].Name)
+	assert.Equal(t, "boolean", act.ColumnDetails[0].Type)
+	assert.Equal(t, false, act.ColumnDetails[0].Nullable)
+	assert.Equal(t, "true", act.ColumnDetails[0].Default)
+	assert.Equal(t, "text[]", act.ColumnDetails[1].Type)
+
+	// Verify both CHECK constraints
+	require.NotNil(t, act.Constraints)
+	require.Len(t, act.Constraints.CheckConstraints, 2)
+
+	assert.Equal(t, "store_settings_check", act.Constraints.CheckConstraints[0].ConstraintName)
+	assert.Equal(t, "(default_language = ANY (active_languages))", act.Constraints.CheckConstraints[0].Expression)
+
+	assert.Equal(t, "store_settings_id_check", act.Constraints.CheckConstraints[1].ConstraintName)
+	assert.Equal(t, "(id = true)", act.Constraints.CheckConstraints[1].Expression)
 }
