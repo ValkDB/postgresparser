@@ -133,8 +133,8 @@ func prepareParseState(sql string, tolerateSyntaxErrors bool) (*parseState, erro
 	parser.BuildParseTrees = true
 
 	errListener := &parseErrorListener{}
-	parser.RemoveErrorListeners()
-	parser.AddErrorListener(errListener)
+	replaceErrorListeners(lexer, errListener)
+	replaceErrorListeners(parser, errListener)
 
 	root := parser.Root()
 	if !tolerateSyntaxErrors && len(errListener.errs) > 0 {

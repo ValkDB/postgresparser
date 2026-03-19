@@ -399,6 +399,7 @@ func splitQuotedDot(s string) []string {
 func extractParameters(sql string) []Parameter {
 	input := antlr.NewInputStream(sql)
 	lexer := gen.NewPostgreSQLLexer(input)
+	replaceErrorListeners(lexer)
 	var params []Parameter
 	anonIndex := 1
 

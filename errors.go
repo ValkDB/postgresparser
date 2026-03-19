@@ -68,7 +68,22 @@ func (p *ParseErrors) Error() string {
 	return fmt.Sprintf("parse error(s): %s", strings.Join(parts, "; "))
 }
 
-// parseErrorListener collects syntax errors emitted by the ANTLR parser.
+// replaceErrorListeners removes ANTLR's default console listener so parse
+// failures stay inside library results instead of going to process stderr.
+func replaceErrorListeners(recognizer antlr.Recognizer, listeners ...antlr.ErrorListener) {
+	if recognizer == nil {
+		return
+	}
+	recognizer.RemoveErrorListeners()
+	for _, listener := range listeners {
+		if listener == nil {
+			continue
+		}
+		recognizer.AddErrorListener(listener)
+	}
+}
+
+// parseErrorListener collects syntax errors emitted by ANTLR recognizers.
 type parseErrorListener struct {
 	antlr.DefaultErrorListener
 	errs []SyntaxError
