@@ -233,6 +233,7 @@ type Parameter struct {
 type CTE struct {
 	Name         string
 	Query        string
+	ParsedQuery  *ParsedQuery
 	Materialized string // "", "MATERIALIZED", or "NOT MATERIALIZED"
 }
 

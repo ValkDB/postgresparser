@@ -243,6 +243,7 @@ func convertCTEs(ctes []postgresparser.CTE) []SQLCTE {
 		out = append(out, SQLCTE{
 			Name:         cte.Name,
 			Query:        cte.Query,
+			Analysis:     convertParsedQuery(cte.ParsedQuery),
 			Materialized: cte.Materialized,
 		})
 	}

@@ -96,6 +96,7 @@ type SQLSubquery struct {
 type SQLCTE struct {
 	Name         string
 	Query        string
+	Analysis     *SQLAnalysis
 	Materialized string
 }
 

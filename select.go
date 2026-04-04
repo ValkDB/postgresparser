@@ -128,7 +128,7 @@ func resolveSelectFromParens(swp gen.ISelect_with_parensContext) (gen.IWith_clau
 }
 
 // extractCTEs captures metadata for each common table expression defined in WITH.
-// It also recursively parses the CTE queries to extract tables referenced within them.
+// It also builds nested IR for the CTE body and surfaces tables referenced within it.
 func extractCTEs(withCtx gen.IWith_clauseContext, tokens antlr.TokenStream) ([]CTE, []TableRef) {
 	if withCtx == nil {
 		return nil, nil
@@ -158,15 +158,20 @@ func extractCTEs(withCtx gen.IWith_clauseContext, tokens antlr.TokenStream) ([]C
 			}
 		}
 		query := ""
+		var parsedQuery *ParsedQuery
 		if cteCtx.Preparablestmt() != nil {
 			if prc, ok := cteCtx.Preparablestmt().(antlr.ParserRuleContext); ok {
 				query = strings.TrimSpace(ctxText(tokens, prc))
 			}
 
-			// Recursively parse the CTE's query to extract tables
 			if stmtCtx := cteCtx.Preparablestmt(); stmtCtx != nil {
-				// Try to extract tables from the CTE's statement
-				if tables := extractTablesFromPreparableStmt(stmtCtx, tokens); len(tables) > 0 {
+				parsed, err := parsePreparableStmtToIR(stmtCtx, tokens, query, ParseOptions{})
+				if err == nil {
+					parsedQuery = parsed
+					if tables := extractTablesFromParsedQuery(parsedQuery); len(tables) > 0 {
+						allTables = append(allTables, tables...)
+					}
+				} else if tables := extractTablesFromPreparableStmt(stmtCtx, tokens); len(tables) > 0 {
 					allTables = append(allTables, tables...)
 				}
 			}
@@ -177,6 +182,7 @@ func extractCTEs(withCtx gen.IWith_clauseContext, tokens antlr.TokenStream) ([]C
 		ctes = append(ctes, CTE{
 			Name:         name,
 			Query:        query,
+			ParsedQuery:  parsedQuery,
 			Materialized: materialized,
 		})
 	}
@@ -190,69 +196,29 @@ func extractTablesFromPreparableStmt(stmt gen.IPreparablestmtContext, tokens ant
 		return nil
 	}
 
-	var tables []TableRef
+	rawSQL := ""
+	if prc, ok := stmt.(antlr.ParserRuleContext); ok {
+		rawSQL = strings.TrimSpace(ctxText(tokens, prc))
+	}
 
-	// Check if it's a SELECT statement
-	if selectCtx := stmt.Selectstmt(); selectCtx != nil {
-		// Create a temporary result to collect tables
-		tempResult := &ParsedQuery{}
+	parsed, err := parsePreparableStmtToIR(stmt, tokens, rawSQL, ParseOptions{})
+	if err != nil {
+		return nil
+	}
+	return extractTablesFromParsedQuery(parsed)
+}
 
-		// Resolve the SELECT statement
-		withClause, simpleSelect, selectNoParens, err := resolveSelect(selectCtx)
-		if err == nil && simpleSelect != nil {
-			// Build a map of CTE names (empty for nested parsing)
-			cteNames := map[string]struct{}{}
+func extractTablesFromParsedQuery(parsed *ParsedQuery) []TableRef {
+	if parsed == nil {
+		return nil
+	}
 
-			// If this nested statement has its own WITH clause, handle it recursively
-			if withClause != nil {
-				nestedCTEs, nestedTables := extractCTEs(withClause, tokens)
-				if len(nestedCTEs) > 0 {
-					for _, cte := range nestedCTEs {
-						if cte.Name != "" {
-							cteNames[strings.ToLower(cte.Name)] = struct{}{}
-						}
-					}
-				}
-				if len(nestedTables) > 0 {
-					tables = append(tables, nestedTables...)
-				}
-			}
-
-			// Extract tables from the FROM clause
-			extractFromClause(tempResult, simpleSelect.From_clause(), tokens, cteNames)
-
-			// Extract tables from subqueries in WHERE, HAVING, etc.
-			if simpleSelect.Where_clause() != nil {
-				extractWhereClause(tempResult, simpleSelect.Where_clause(), tokens)
-			}
-
-			// Collect all base tables (not CTEs)
-			tables = append(tables, tempResult.Tables...)
-
-			// Also handle any subqueries
-			for _, subq := range tempResult.Subqueries {
-				if subq.Query != nil {
-					tables = append(tables, subq.Query.Tables...)
-				}
-			}
-
-			// Handle set operations if present
-			if selectNoParens != nil {
-				setOps, leadingTables, _ := extractSetOperationsWithResult(selectNoParens, tokens, cteNames, tempResult)
-				if len(leadingTables) > 0 {
-					tables = append(tables, leadingTables...)
-				}
-				// Add tables from set operations
-				for _, setOp := range setOps {
-					if len(setOp.Tables) > 0 {
-						tables = append(tables, setOp.Tables...)
-					}
-				}
-			}
+	tables := append([]TableRef(nil), parsed.Tables...)
+	for _, subq := range parsed.Subqueries {
+		if subq.Query != nil {
+			tables = append(tables, extractTablesFromParsedQuery(subq.Query)...)
 		}
 	}
-	// Other statement types (INSERT, UPDATE, DELETE) could be handled here if needed
-
 	return tables
 }
 

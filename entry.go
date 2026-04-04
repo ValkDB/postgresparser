@@ -174,11 +174,7 @@ func prepareParseState(sql string, tolerateSyntaxErrors bool) (*parseState, erro
 
 // parseStatementToIR maps a single parsed statement node to ParsedQuery IR.
 func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL string, opts ParseOptions) (*ParsedQuery, error) {
-	res := &ParsedQuery{
-		Command:        QueryCommandUnknown,
-		RawSQL:         strings.TrimSpace(rawSQL),
-		DerivedColumns: make(map[string]string),
-	}
+	res := newParsedQuery(rawSQL)
 
 	switch {
 	case stmt.Selectstmt() != nil:
@@ -242,6 +238,50 @@ func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL 
 
 	res.Parameters = extractParameters(rawSQL)
 	return res, nil
+}
+
+func parsePreparableStmtToIR(stmt gen.IPreparablestmtContext, stream antlr.TokenStream, rawSQL string, _ ParseOptions) (*ParsedQuery, error) {
+	if stmt == nil {
+		return nil, fmt.Errorf("preparable statement: %w", ErrNilContext)
+	}
+
+	res := newParsedQuery(rawSQL)
+
+	switch {
+	case stmt.Selectstmt() != nil:
+		res.Command = QueryCommandSelect
+		if err := populateSelect(res, stmt.Selectstmt(), stream); err != nil {
+			return nil, err
+		}
+	case stmt.Insertstmt() != nil:
+		res.Command = QueryCommandInsert
+		if err := populateInsert(res, stmt.Insertstmt(), stream); err != nil {
+			return nil, err
+		}
+	case stmt.Updatestmt() != nil:
+		res.Command = QueryCommandUpdate
+		if err := populateUpdate(res, stmt.Updatestmt(), stream); err != nil {
+			return nil, err
+		}
+	case stmt.Deletestmt() != nil:
+		res.Command = QueryCommandDelete
+		if err := populateDelete(res, stmt.Deletestmt(), stream); err != nil {
+			return nil, err
+		}
+	default:
+		return res, nil
+	}
+
+	res.Parameters = extractParameters(rawSQL)
+	return res, nil
+}
+
+func newParsedQuery(rawSQL string) *ParsedQuery {
+	return &ParsedQuery{
+		Command:        QueryCommandUnknown,
+		RawSQL:         strings.TrimSpace(rawSQL),
+		DerivedColumns: make(map[string]string),
+	}
 }
 
 // statementText extracts the exact SQL text for one statement node.

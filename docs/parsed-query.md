@@ -51,6 +51,10 @@ It is not designed for:
 
 - `Tables`: Structured relation refs (`Schema`, `Name`, `Alias`, `Type`, `Raw`).
 - `CTEs`: `WITH` definitions.
+  - `Name`: CTE binding name.
+  - `Query`: raw SQL text of the CTE body.
+  - `ParsedQuery`: nested IR for the CTE body when the body is a supported preparable statement.
+  - `Materialized`: materialization hint (`MATERIALIZED`, `NOT MATERIALIZED`, or empty).
 - `Subqueries`: Nested query refs discovered in the statement.
 - `JoinConditions`: Raw join condition expressions.
 - `Correlations`: Outer/inner alias correlation metadata for lateral/correlated subqueries.
