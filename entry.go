@@ -240,6 +240,8 @@ func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL 
 	return res, nil
 }
 
+// parsePreparableStmtToIR converts a CTE/body preparable statement into nested
+// ParsedQuery IR while preserving the raw SQL text for the body.
 func parsePreparableStmtToIR(stmt gen.IPreparablestmtContext, stream antlr.TokenStream, rawSQL string, _ ParseOptions) (*ParsedQuery, error) {
 	if stmt == nil {
 		return nil, fmt.Errorf("preparable statement: %w", ErrNilContext)
