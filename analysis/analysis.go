@@ -118,6 +118,7 @@ func convertParsedQuery(pq *postgresparser.ParsedQuery) *SQLAnalysis {
 		GroupBy:       append([]string(nil), pq.GroupBy...),
 		JoinClauses:   append([]string(nil), pq.JoinConditions...),
 		Parameters:    convertParameters(pq.Parameters),
+		Placeholders:  convertPlaceholders(pq.Placeholders),
 		InsertColumns: append([]string(nil), pq.InsertColumns...),
 		SetClauses:    append([]string(nil), pq.SetClauses...),
 	}
@@ -290,6 +291,23 @@ func convertParameters(params []postgresparser.Parameter) []SQLParameter {
 			Marker:   p.Marker,
 			Position: p.Position,
 		})
+	}
+	return out
+}
+
+// convertPlaceholders maps parser placeholder metadata into analysis placeholders.
+func convertPlaceholders(placeholders []postgresparser.Placeholder) []Placeholder {
+	if len(placeholders) == 0 {
+		return nil
+	}
+	out := make([]Placeholder, 0, len(placeholders))
+	for _, p := range placeholders {
+		cp := p
+		if p.ParentFn != nil {
+			fn := *p.ParentFn
+			cp.ParentFn = &fn
+		}
+		out = append(out, cp)
 	}
 	return out
 }

@@ -297,6 +297,32 @@ func BenchmarkPostgresParserWithOptions_FieldCommentsEnabled(b *testing.B) {
 	})
 }
 
+// BenchmarkPostgresParser_PlaceholderRoles measures role extraction on
+// normalized SQL with several placeholder contexts.
+func BenchmarkPostgresParser_PlaceholderRoles(b *testing.B) {
+	const sql = `SELECT date_trunc(?, o.created_at) AS week, c.plan, count(DISTINCT o.id)
+FROM orders o
+JOIN customers c ON c.id = o.customer_id
+WHERE o.created_at >= ? AND o.created_at < ? AND length(o.notes) < ?
+GROUP BY ?, ?
+ORDER BY ? DESC
+LIMIT ? OFFSET ?`
+
+	result, err := postgresparser.ParseSQL(sql)
+	if err != nil {
+		b.Fatalf("ParseSQL failed: %v", err)
+	}
+	if len(result.Placeholders) != 9 {
+		b.Fatalf("expected 9 placeholders, got %d", len(result.Placeholders))
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		postgresparser.ParseSQL(sql)
+	}
+}
+
 func benchmarkPostgresParserWithOptions(b *testing.B, opts postgresparser.ParseOptions) {
 	for _, q := range optionBenchQueries {
 		b.Run(q.Name, func(b *testing.B) {

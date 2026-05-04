@@ -229,6 +229,117 @@ type Parameter struct {
 	Position int    // Parsed index for $n, or sequential order for '?'
 }
 
+// PlaceholderRole describes the syntactic position of a `?` or `$N`
+// placeholder in a parsed SQL statement.
+type PlaceholderRole int
+
+const (
+	PlaceholderRoleUnknown PlaceholderRole = iota
+	PlaceholderRoleWhereValue
+	PlaceholderRoleHavingValue
+	PlaceholderRoleSelectExpr
+	PlaceholderRoleFunctionArg
+	PlaceholderRoleLimit
+	PlaceholderRoleOffset
+	PlaceholderRoleGroupByOrdinal
+	PlaceholderRoleOrderByOrdinal
+	PlaceholderRoleIntervalOperand
+	PlaceholderRoleArrayMember
+	PlaceholderRoleInsertValue
+	PlaceholderRoleUpdateSetValue
+	PlaceholderRoleCaseExpr
+	PlaceholderRoleInListMember
+	PlaceholderRoleBetweenLow
+	PlaceholderRoleBetweenHigh
+)
+
+// String returns a stable lowercase identifier for serialization.
+func (r PlaceholderRole) String() string {
+	switch r {
+	case PlaceholderRoleWhereValue:
+		return "where_value"
+	case PlaceholderRoleHavingValue:
+		return "having_value"
+	case PlaceholderRoleSelectExpr:
+		return "select_expr"
+	case PlaceholderRoleFunctionArg:
+		return "function_arg"
+	case PlaceholderRoleLimit:
+		return "limit"
+	case PlaceholderRoleOffset:
+		return "offset"
+	case PlaceholderRoleGroupByOrdinal:
+		return "group_by_ordinal"
+	case PlaceholderRoleOrderByOrdinal:
+		return "order_by_ordinal"
+	case PlaceholderRoleIntervalOperand:
+		return "interval_operand"
+	case PlaceholderRoleArrayMember:
+		return "array_member"
+	case PlaceholderRoleInsertValue:
+		return "insert_value"
+	case PlaceholderRoleUpdateSetValue:
+		return "update_set_value"
+	case PlaceholderRoleCaseExpr:
+		return "case_expr"
+	case PlaceholderRoleInListMember:
+		return "in_list_member"
+	case PlaceholderRoleBetweenLow:
+		return "between_low"
+	case PlaceholderRoleBetweenHigh:
+		return "between_high"
+	default:
+		return "unknown"
+	}
+}
+
+// FunctionRef identifies a function call site in the parsed statement.
+type FunctionRef struct {
+	Name     string // Canonical lowercase function name.
+	ArgIndex int    // Zero-based index of this placeholder among function arguments.
+	ArgCount int    // Total number of arguments at the function call site.
+}
+
+// CaseClause distinguishes positions inside a CASE expression.
+type CaseClause int
+
+const (
+	CaseClauseUnknown CaseClause = iota
+	CaseClausePredicate
+	CaseClauseResult
+	CaseClauseDefault
+)
+
+// String returns a stable lowercase identifier for serialization.
+func (c CaseClause) String() string {
+	switch c {
+	case CaseClausePredicate:
+		return "predicate"
+	case CaseClauseResult:
+		return "result"
+	case CaseClauseDefault:
+		return "default"
+	default:
+		return "unknown"
+	}
+}
+
+// Placeholder is one occurrence of `?` or `$N` in a parsed SQL statement.
+type Placeholder struct {
+	Index int             // One-based positional index for `?`, or the numeric index for `$N`.
+	Style string          // Placeholder marker style: "?" or "$".
+	Role  PlaceholderRole // Syntactic role at this position.
+
+	ParentFn     *FunctionRef // Function metadata when Role is PlaceholderRoleFunctionArg.
+	CaseClause   CaseClause   // CASE sub-position when Role is PlaceholderRoleCaseExpr.
+	InsertColumn string       // INSERT column filled by this placeholder, when known.
+	UpdateColumn string       // UPDATE SET column assigned by this placeholder, when known.
+	ColumnRef    string       // Predicate column reference, formatted as "table.column" or "column".
+
+	Start int // Start byte offset in the original SQL.
+	End   int // End byte offset in the original SQL.
+}
+
 // CTE describes a common table expression defined in a WITH clause.
 type CTE struct {
 	Name         string
@@ -315,6 +426,7 @@ type ParsedQuery struct {
 	Limit          *LimitClause
 	JoinConditions []string
 	Parameters     []Parameter
+	Placeholders   []Placeholder // Placeholder occurrences in source-text order.
 	InsertColumns  []string
 	SetClauses     []string
 	Returning      []string
