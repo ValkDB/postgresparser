@@ -46,6 +46,7 @@ It is not designed for:
 - `Command`: High-level statement type (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `DDL`, `UNKNOWN`).
 - `RawSQL`: Preprocessed SQL string used for parsing.
 - `Parameters`: Positional/anonymous parameter placeholders (`$1`, `?`, etc.).
+- `Placeholders`: Placeholder occurrences in source order with syntactic roles such as `where_value`, `function_arg`, `group_by_ordinal`, `order_by_ordinal`, `limit`, `offset`, `interval_operand`, `insert_value`, and `update_set_value`.
 
 ## Relation Metadata
 

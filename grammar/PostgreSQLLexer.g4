@@ -148,7 +148,7 @@ OperatorEndingWithPlusMinus:
 
 // by the operator rules above.
 
-fragment OperatorCharacter: [*<>=~!@%^&|`#];
+fragment OperatorCharacter: [*<>=~!@%^&|`#?];
 // these are the operator characters that don't count towards one ending with + or -
 
 fragment OperatorCharacterNotAllowPlusMinusAtEnd: [*<>=+];

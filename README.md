@@ -150,6 +150,27 @@ for _, c := range conditions {
 // total > 100
 ```
 
+### Placeholder roles
+
+`AnalyzeSQL` exposes the syntactic role of each `?` or `$N` placeholder without
+re-parsing or scanning SQL text:
+
+```go
+result, _ := analysis.AnalyzeSQL("SELECT * FROM t WHERE id = ? LIMIT ?")
+for _, p := range result.Placeholders {
+    fmt.Printf("placeholder %d: role=%s\n", p.Index, p.Role)
+}
+// Output:
+//   placeholder 1: role=where_value
+//   placeholder 2: role=limit
+```
+
+Roles cover common placeholder positions such as predicate values, function
+arguments, `GROUP BY` and `ORDER BY` ordinals, `LIMIT`, `OFFSET`, `INTERVAL`,
+array members, `INSERT` values, and `UPDATE SET` values. This supports generic
+use cases such as ORM type-checking, query rewriting, SQL linting, and
+normalized-SQL inspection.
+
 ### Schema-aware JOIN relationship detection
 
 Pass in your schema metadata and get back foreign key relationships — no heuristic guessing:

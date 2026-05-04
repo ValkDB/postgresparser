@@ -4,6 +4,8 @@
 // can be consumed as an independent library.
 package analysis
 
+import "github.com/valkdb/postgresparser"
+
 // SQLCommand identifies the high-level SQL statement type.
 type SQLCommand string
 
@@ -65,6 +67,45 @@ type SQLParameter struct {
 	Marker   string
 	Position int
 }
+
+// PlaceholderRole describes the syntactic position of a SQL placeholder.
+type PlaceholderRole = postgresparser.PlaceholderRole
+
+const (
+	PlaceholderRoleUnknown         = postgresparser.PlaceholderRoleUnknown
+	PlaceholderRoleWhereValue      = postgresparser.PlaceholderRoleWhereValue
+	PlaceholderRoleHavingValue     = postgresparser.PlaceholderRoleHavingValue
+	PlaceholderRoleSelectExpr      = postgresparser.PlaceholderRoleSelectExpr
+	PlaceholderRoleFunctionArg     = postgresparser.PlaceholderRoleFunctionArg
+	PlaceholderRoleLimit           = postgresparser.PlaceholderRoleLimit
+	PlaceholderRoleOffset          = postgresparser.PlaceholderRoleOffset
+	PlaceholderRoleGroupByOrdinal  = postgresparser.PlaceholderRoleGroupByOrdinal
+	PlaceholderRoleOrderByOrdinal  = postgresparser.PlaceholderRoleOrderByOrdinal
+	PlaceholderRoleIntervalOperand = postgresparser.PlaceholderRoleIntervalOperand
+	PlaceholderRoleArrayMember     = postgresparser.PlaceholderRoleArrayMember
+	PlaceholderRoleInsertValue     = postgresparser.PlaceholderRoleInsertValue
+	PlaceholderRoleUpdateSetValue  = postgresparser.PlaceholderRoleUpdateSetValue
+	PlaceholderRoleCaseExpr        = postgresparser.PlaceholderRoleCaseExpr
+	PlaceholderRoleInListMember    = postgresparser.PlaceholderRoleInListMember
+	PlaceholderRoleBetweenLow      = postgresparser.PlaceholderRoleBetweenLow
+	PlaceholderRoleBetweenHigh     = postgresparser.PlaceholderRoleBetweenHigh
+)
+
+// FunctionRef identifies a function call site in the parsed statement.
+type FunctionRef = postgresparser.FunctionRef
+
+// CaseClause distinguishes positions inside a CASE expression.
+type CaseClause = postgresparser.CaseClause
+
+const (
+	CaseClauseUnknown   = postgresparser.CaseClauseUnknown
+	CaseClausePredicate = postgresparser.CaseClausePredicate
+	CaseClauseResult    = postgresparser.CaseClauseResult
+	CaseClauseDefault   = postgresparser.CaseClauseDefault
+)
+
+// Placeholder is one occurrence of `?` or `$N` in a parsed SQL statement.
+type Placeholder = postgresparser.Placeholder
 
 // SQLSetOperationType enumerates supported set-operation modifiers.
 type SQLSetOperationType string
@@ -267,6 +308,7 @@ type SQLAnalysis struct {
 	Limit          *SQLLimit
 	JoinClauses    []string
 	Parameters     []SQLParameter
+	Placeholders   []Placeholder
 	InsertColumns  []string
 	SetClauses     []string
 	Returning      []string

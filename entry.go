@@ -25,7 +25,7 @@ func ParseSQLWithOptions(sql string, opts ParseOptions) (*ParsedQuery, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL, opts)
+	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL, state.cleanSQL, opts)
 }
 
 // ParseSQLAll parses all SQL statements in the input string and returns a
@@ -54,7 +54,7 @@ func ParseSQLAllWithOptions(sql string, opts ParseOptions) (*ParseBatchResult, e
 		if stmtSQL == "" {
 			continue
 		}
-		query, parseErr := parseStatementToIR(stmt, state.stream, stmtSQL, opts)
+		query, parseErr := parseStatementToIR(stmt, state.stream, stmtSQL, state.cleanSQL, opts)
 		if parseErr != nil {
 			continue
 		}
@@ -107,7 +107,7 @@ func ParseSQLStrictWithOptions(sql string, opts ParseOptions) (*ParsedQuery, err
 	if len(state.stmts) > 1 {
 		return nil, &MultipleStatementsError{StatementCount: len(state.stmts)}
 	}
-	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL, opts)
+	return parseStatementToIR(state.stmts[0], state.stream, state.cleanSQL, state.cleanSQL, opts)
 }
 
 // parseState holds the shared ANTLR parse artifacts produced by prepareParseState
@@ -173,7 +173,7 @@ func prepareParseState(sql string, tolerateSyntaxErrors bool) (*parseState, erro
 }
 
 // parseStatementToIR maps a single parsed statement node to ParsedQuery IR.
-func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL string, opts ParseOptions) (*ParsedQuery, error) {
+func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL, sourceSQL string, opts ParseOptions) (*ParsedQuery, error) {
 	res := newParsedQuery(rawSQL)
 
 	switch {
@@ -237,6 +237,7 @@ func parseStatementToIR(stmt gen.IStmtContext, stream antlr.TokenStream, rawSQL 
 	}
 
 	res.Parameters = extractParameters(rawSQL)
+	res.Placeholders = extractPlaceholders(stmt, sourceSQL)
 	return res, nil
 }
 
@@ -275,6 +276,7 @@ func parsePreparableStmtToIR(stmt gen.IPreparablestmtContext, stream antlr.Token
 	}
 
 	res.Parameters = extractParameters(rawSQL)
+	res.Placeholders = extractPlaceholdersFromPreparable(stmt, rawSQL)
 	return res, nil
 }
 

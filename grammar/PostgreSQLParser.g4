@@ -3712,6 +3712,7 @@ b_expr
 c_expr
     : EXISTS select_with_parens                                        # c_expr_exists
     | ARRAY (select_with_parens | array_expr)                          # c_expr_expr
+    | constinterval PARAM interval_?                                   # c_expr_expr
     | PARAM opt_indirection                                            # c_expr_expr
     | GROUPING OPEN_PAREN expr_list CLOSE_PAREN                        # c_expr_expr
     | /*22*/ UNIQUE select_with_parens                                 # c_expr_expr
@@ -3986,6 +3987,7 @@ mathop
 
 qual_op
     : Operator
+    | PARAM
     | OPERATOR OPEN_PAREN any_operator CLOSE_PAREN
     ;
 
@@ -4042,6 +4044,7 @@ extract_arg
     | MINUTE_P
     | SECOND_P
     | sconst
+    | PARAM
     ;
 
 unicode_normal_form
@@ -4331,7 +4334,7 @@ aexprconst
     | xconst
     | func_name (sconst | OPEN_PAREN func_arg_list sort_clause_? CLOSE_PAREN sconst)
     | consttypename sconst
-    | constinterval (sconst interval_? | OPEN_PAREN iconst CLOSE_PAREN sconst)
+    | constinterval ((sconst | PARAM) interval_? | OPEN_PAREN iconst CLOSE_PAREN sconst)
     | TRUE_P
     | FALSE_P
     | NULL_P
