@@ -112,6 +112,11 @@ PARAM
 
 //
 
+// JSONB compound `?`-prefixed operators. Defined before the generic Operator
+// rule so they win on equal-length matches (ANTLR rule-order tie-break).
+QUESTION_AND: '?' '&';
+QUESTION_OR:  '?' '|';
+
 // this rule does not allow + or - at the end of a multi-character operator
 
 Operator:

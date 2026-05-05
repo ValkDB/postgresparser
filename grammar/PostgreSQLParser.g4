@@ -3988,6 +3988,8 @@ mathop
 qual_op
     : Operator
     | PARAM
+    | QUESTION_AND
+    | QUESTION_OR
     | OPERATOR OPEN_PAREN any_operator CLOSE_PAREN
     ;
 
