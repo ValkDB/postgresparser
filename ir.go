@@ -389,7 +389,57 @@ type ColumnUsage struct {
 	Context    string // Raw clause string for debugging
 	Operator   string
 	Side       string
-	Functions  []string
+	// Functions lists function names that wrap this column reference outside WHERE
+	// clauses (SELECT projection, ORDER BY, GROUP BY, HAVING, etc.) where wrapper
+	// semantics are not used by simulation/materialization. For WHERE-clause
+	// wrappers, see FunctionWrapper which carries typed metadata including args.
+	Functions []string
+	// Function is set only for WHERE-clause predicates whose subject column is wrapped
+	// by an allowlisted function (length, lower, upper, coalesce, extract, date_trunc,
+	// char_length, octet_length). Nil otherwise. See FunctionWrapper.
+	Function *FunctionWrapper
+}
+
+// FunctionWrapper describes a function call that wraps a bare column reference in a
+// WHERE-clause predicate. Populated only on the WHERE-side ColumnUsage entries; nil
+// for projection / ORDER BY / GROUP BY / HAVING / window / RETURNING / JOIN ON usage,
+// for non-allowlisted functions, for schema-qualified names other than pg_catalog,
+// and when the function argument is itself an expression (e.g. length(col || 'x')).
+type FunctionWrapper struct {
+	// Name is the canonical lowercase function name, unqualified. pg_catalog.<name>
+	// is canonicalised to bare <name>; any other schema rejects the wrapper outright.
+	Name string
+	// Schema is the empty string for unqualified calls and for pg_catalog
+	// (canonicalised away). Any other schema causes the wrapper not to be attached.
+	Schema string
+	// Args carries the literal arguments other than the column itself, in source
+	// order (extract field, date_trunc unit, coalesce defaults, etc.). Empty for
+	// single-arg wrappers like length / lower.
+	Args []FunctionArg
+	// IsNested is true when the wrapped column is reached through one or more
+	// additional allowlisted-function wrappers (e.g. lower(lower(col)),
+	// length(lower(col))). Outermost-only attribution: Name reflects the
+	// outermost call; the inner chain is observable only via this flag.
+	IsNested bool
+	// Cast is the textual target type of a typecast applied to the wrapper as a
+	// whole (length(col)::int, CAST(length(col) AS bigint)). Empty when there is
+	// no cast. For chained casts the outermost cast is recorded.
+	Cast string
+}
+
+// FunctionArg is a single non-column argument to a wrapping function in a WHERE
+// predicate (extract field, date_trunc unit, coalesce defaults, etc.).
+type FunctionArg struct {
+	// Literal holds the SQL textual form of a literal argument. Nil means the
+	// argument is a non-literal expression (column reference, sub-call, placeholder).
+	// Consumers requiring a fixed value MUST nil-check and fall back to the
+	// standard column+operator interpretation when nil. Numeric, boolean, and
+	// interval literals are stringified (e.g. "0", "true", "1 day"); string
+	// literals retain their surrounding quotes.
+	Literal *string
+	// IsNull is true when the argument is the explicit SQL NULL keyword. Disjoint
+	// from Literal: a NULL has IsNull=true, Literal=nil.
+	IsNull bool
 }
 
 // StatementParseResult contains the parse outcome for one input statement at the

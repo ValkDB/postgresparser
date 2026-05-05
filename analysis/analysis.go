@@ -146,6 +146,26 @@ func convertParsedQuery(pq *postgresparser.ParsedQuery) *SQLAnalysis {
 	return res
 }
 
+// cloneFunctionWrapper deep-copies a parser FunctionWrapper into an analysis-layer
+// pointer so analysis-side mutation cannot affect the parser IR. Returns nil for nil.
+func cloneFunctionWrapper(w *postgresparser.FunctionWrapper) *SQLFunctionWrapper {
+	if w == nil {
+		return nil
+	}
+	cp := *w
+	if len(w.Args) > 0 {
+		cp.Args = make([]postgresparser.FunctionArg, len(w.Args))
+		for i, a := range w.Args {
+			cp.Args[i] = postgresparser.FunctionArg{IsNull: a.IsNull}
+			if a.Literal != nil {
+				lit := *a.Literal
+				cp.Args[i].Literal = &lit
+			}
+		}
+	}
+	return &cp
+}
+
 // convertColumnUsage maps parser column-usage entries into analysis column usage entries.
 func convertColumnUsage(usage []postgresparser.ColumnUsage) []SQLColumnUsage {
 	if len(usage) == 0 {
@@ -162,6 +182,7 @@ func convertColumnUsage(usage []postgresparser.ColumnUsage) []SQLColumnUsage {
 			Operator:   u.Operator,
 			Side:       u.Side,
 			Functions:  append([]string(nil), u.Functions...),
+			Function:   cloneFunctionWrapper(u.Function),
 		})
 	}
 	return out

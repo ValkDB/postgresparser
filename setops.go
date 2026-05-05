@@ -276,9 +276,9 @@ func extractTablesAndUsageForPrimary(primary gen.ISimple_select_pramaryContext, 
 		targetResult = result
 	}
 	if where := primary.Where_clause(); where != nil {
-		// Use the new comparison-aware extraction for WHERE clauses
+		// Set-op branch WHERE: enable wrapper extraction.
 		if whereExpr := where.A_expr(); whereExpr != nil {
-			findAndRecordComparisons(targetResult, whereExpr, ColumnUsageTypeFilter, tokens)
+			findAndRecordComparisons(targetResult, whereExpr, ColumnUsageTypeFilter, tokens, true)
 		}
 	}
 	if primary.TABLE() != nil && primary.Relation_expr() != nil {

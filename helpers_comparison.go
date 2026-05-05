@@ -17,6 +17,7 @@ type comparisonInfo struct {
 	expression string
 	operator   string
 	context    string
+	wrapper    *FunctionWrapper
 }
 
 // comprehensiveComparisonCollector implements a full listener for all A_expr node types
@@ -26,6 +27,10 @@ type comprehensiveComparisonCollector struct {
 	comparisons   []comparisonInfo
 	tokens        antlr.TokenStream
 	subqueryDepth int
+	// wantWrappers is set by callers operating on WHERE-clause subtrees only.
+	// When false (HAVING, JOIN ON, ORDER BY, window, etc.) wrapper detection is
+	// skipped entirely, so ColumnUsage.Function stays nil at non-WHERE sites.
+	wantWrappers bool
 }
 
 // EnterSelect_with_parens increments nested subquery depth so outer comparison
@@ -69,6 +74,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_compare(ctx *gen.A_expr_c
 	if operator != "" {
 		// Extract columns from this comparison
 		columns := extractColumnsFromContext(ctx)
+		wrappers := c.wrappersForCompare(ctx)
 		for _, col := range columns {
 			c.comparisons = append(c.comparisons, comparisonInfo{
 				column:     col.Name,
@@ -76,9 +82,21 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_compare(ctx *gen.A_expr_c
 				expression: col.Expr,
 				operator:   operator,
 				context:    exprText,
+				wrapper:    wrappers[col.TableAlias+"|"+col.Name],
 			})
 		}
 	}
+}
+
+// wrappersForCompare returns the wrapper map for ctx when wrapper detection is
+// enabled at this call site (WHERE-clause comparisons only). Returns nil for
+// HAVING / JOIN ON / ORDER BY / window / set-op-non-WHERE traversals so that
+// ColumnUsage.Function stays unset outside WHERE.
+func (c *comprehensiveComparisonCollector) wrappersForCompare(ctx antlr.ParserRuleContext) map[string]*FunctionWrapper {
+	if !c.wantWrappers {
+		return nil
+	}
+	return detectWrappersInComparison(ctx)
 }
 
 // EnterA_expr_like handles LIKE and ILIKE operators
@@ -114,6 +132,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_like(ctx *gen.A_expr_like
 
 	if operator != "" {
 		columns := extractColumnsFromContext(ctx)
+		wrappers := c.wrappersForCompare(ctx)
 		for _, col := range columns {
 			c.comparisons = append(c.comparisons, comparisonInfo{
 				column:     col.Name,
@@ -121,6 +140,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_like(ctx *gen.A_expr_like
 				expression: col.Expr,
 				operator:   operator,
 				context:    exprText,
+				wrapper:    wrappers[col.TableAlias+"|"+col.Name],
 			})
 		}
 	}
@@ -159,6 +179,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_in(ctx *gen.A_expr_inCont
 
 	if operator != "" {
 		columns := extractColumnsFromContext(ctx)
+		wrappers := c.wrappersForCompare(ctx)
 		for _, col := range columns {
 			c.comparisons = append(c.comparisons, comparisonInfo{
 				column:     col.Name,
@@ -166,6 +187,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_in(ctx *gen.A_expr_inCont
 				expression: col.Expr,
 				operator:   operator,
 				context:    exprText,
+				wrapper:    wrappers[col.TableAlias+"|"+col.Name],
 			})
 		}
 	}
@@ -204,6 +226,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_between(ctx *gen.A_expr_b
 
 	if operator != "" {
 		columns := extractColumnsFromContext(ctx)
+		wrappers := c.wrappersForCompare(ctx)
 		for _, col := range columns {
 			c.comparisons = append(c.comparisons, comparisonInfo{
 				column:     col.Name,
@@ -211,6 +234,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_between(ctx *gen.A_expr_b
 				expression: col.Expr,
 				operator:   operator,
 				context:    exprText,
+				wrapper:    wrappers[col.TableAlias+"|"+col.Name],
 			})
 		}
 	}
@@ -277,6 +301,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_isnull(ctx *gen.A_expr_is
 
 	if operator != "" {
 		columns := extractColumnsFromContext(ctx)
+		wrappers := c.wrappersForCompare(ctx)
 		for _, col := range columns {
 			c.comparisons = append(c.comparisons, comparisonInfo{
 				column:     col.Name,
@@ -284,6 +309,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_isnull(ctx *gen.A_expr_is
 				expression: col.Expr,
 				operator:   operator,
 				context:    exprText,
+				wrapper:    wrappers[col.TableAlias+"|"+col.Name],
 			})
 		}
 	}
@@ -333,6 +359,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_is_not(ctx *gen.A_expr_is
 	// Only process if we actually found an IS NOT expression
 	if operator != "" && hasISNOT {
 		columns := extractColumnsFromContext(ctx)
+		wrappers := c.wrappersForCompare(ctx)
 		for _, col := range columns {
 			c.comparisons = append(c.comparisons, comparisonInfo{
 				column:     col.Name,
@@ -340,6 +367,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_is_not(ctx *gen.A_expr_is
 				expression: col.Expr,
 				operator:   operator,
 				context:    exprText,
+				wrapper:    wrappers[col.TableAlias+"|"+col.Name],
 			})
 		}
 	}
@@ -364,6 +392,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_qual_op(ctx *gen.A_expr_q
 
 	if operator != "" {
 		columns := extractColumnsFromContext(ctx)
+		wrappers := c.wrappersForCompare(ctx)
 		for _, col := range columns {
 			c.comparisons = append(c.comparisons, comparisonInfo{
 				column:     col.Name,
@@ -371,6 +400,7 @@ func (c *comprehensiveComparisonCollector) EnterA_expr_qual_op(ctx *gen.A_expr_q
 				expression: col.Expr,
 				operator:   operator,
 				context:    exprText,
+				wrapper:    wrappers[col.TableAlias+"|"+col.Name],
 			})
 		}
 	}
@@ -409,7 +439,12 @@ func extractColumnsFromContext(ctx antlr.ParserRuleContext) []columnRef {
 
 // findAndRecordComparisons finds individual comparison expressions and records them with their operators.
 // This version uses a comprehensive listener to handle all node types properly.
-func findAndRecordComparisons(result *ParsedQuery, ctx antlr.RuleContext, role ColumnUsageType, tokens antlr.TokenStream) {
+//
+// wantWrappers controls FunctionWrapper extraction on the recorded ColumnUsage
+// rows. Pass true for WHERE-clause subtrees only; pass false for HAVING /
+// JOIN ON / ORDER BY / window / set-op-non-WHERE traversals so wrapper metadata
+// stays out of those sites by construction.
+func findAndRecordComparisons(result *ParsedQuery, ctx antlr.RuleContext, role ColumnUsageType, tokens antlr.TokenStream, wantWrappers bool) {
 	if ctx == nil {
 		return
 	}
@@ -418,6 +453,7 @@ func findAndRecordComparisons(result *ParsedQuery, ctx antlr.RuleContext, role C
 	collector := &comprehensiveComparisonCollector{
 		BasePostgreSQLParserListener: &gen.BasePostgreSQLParserListener{},
 		tokens:                       tokens,
+		wantWrappers:                 wantWrappers,
 	}
 
 	// Walk the tree with the comprehensive collector
@@ -439,6 +475,7 @@ func findAndRecordComparisons(result *ParsedQuery, ctx antlr.RuleContext, role C
 					UsageType:  role,
 					Context:    comp.context,
 					Operator:   comp.operator,
+					Function:   comp.wrapper,
 				})
 			}
 		}

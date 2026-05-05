@@ -94,6 +94,14 @@ const (
 // FunctionRef identifies a function call site in the parsed statement.
 type FunctionRef = postgresparser.FunctionRef
 
+// SQLFunctionWrapper is the analysis-layer alias for postgresparser.FunctionWrapper.
+// Surfaced on SQLColumnUsage entries originating from WHERE-clause predicates
+// where the subject column is wrapped by an allowlisted function.
+type SQLFunctionWrapper = postgresparser.FunctionWrapper
+
+// SQLFunctionArg is the analysis-layer alias for postgresparser.FunctionArg.
+type SQLFunctionArg = postgresparser.FunctionArg
+
 // CaseClause distinguishes positions inside a CASE expression.
 type CaseClause = postgresparser.CaseClause
 
@@ -214,6 +222,10 @@ type SQLColumnUsage struct {
 	Functions  []string
 	Operator   string
 	Side       string
+	// Function carries WHERE-clause wrapper metadata when the column is wrapped
+	// by an allowlisted function in a predicate position. Nil for non-WHERE
+	// usages and for non-allowlisted wrappers. See SQLFunctionWrapper.
+	Function *SQLFunctionWrapper
 }
 
 // SQLDDLColumn describes column-level metadata extracted from CREATE TABLE statements.
