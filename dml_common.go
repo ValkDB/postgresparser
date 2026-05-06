@@ -144,8 +144,8 @@ func appendWhereClause(result *ParsedQuery, whereCtx antlr.ParserRuleContext, to
 	if text != "" {
 		result.Where = append(result.Where, text)
 	}
-	// Use the new comparison-aware extraction for DML WHERE clauses
-	findAndRecordComparisons(result, whereCtx, ColumnUsageTypeFilter, tokens)
+	// DML WHERE: enable wrapper extraction.
+	findAndRecordComparisons(result, whereCtx, ColumnUsageTypeFilter, tokens, true)
 }
 
 // buildCTENameSet creates a lookup used to classify table references against WITH bindings.

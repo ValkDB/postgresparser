@@ -492,8 +492,8 @@ func extractWhereClause(result *ParsedQuery, whereCtx gen.IWhere_clauseContext, 
 		clauseText := strings.TrimSpace(ctxText(tokens, prc))
 		result.Where = append(result.Where, clauseText)
 		extractExpressionSubqueries(result, expr, tokens)
-		// Use the new comparison-aware extraction for WHERE clauses
-		findAndRecordComparisons(result, expr, ColumnUsageTypeFilter, tokens)
+		// WHERE: enable wrapper extraction.
+		findAndRecordComparisons(result, expr, ColumnUsageTypeFilter, tokens, true)
 	}
 }
 
@@ -507,8 +507,8 @@ func extractHavingClause(result *ParsedQuery, havingCtx gen.IHaving_clauseContex
 			result.Having = append(result.Having, strings.TrimSpace(ctxText(tokens, prc)))
 		}
 		extractExpressionSubqueries(result, expr, tokens)
-		// Use the new comparison-aware extraction for HAVING clauses
-		findAndRecordComparisons(result, expr, ColumnUsageTypeFilter, tokens)
+		// HAVING: wrappers explicitly out of scope for v1 — pass false.
+		findAndRecordComparisons(result, expr, ColumnUsageTypeFilter, tokens, false)
 	}
 }
 

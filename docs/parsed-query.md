@@ -63,7 +63,7 @@ It is not designed for:
 ## Read-Query Shape
 
 - `Columns`: Projection expressions and aliases.
-- `ColumnUsage`: Expression-level column usage classification.
+- `ColumnUsage`: Expression-level column usage classification. See [Column Usage](#column-usage) for the per-field contract.
 - `Where`: WHERE/CURRENT clauses as raw expressions.
 - `Having`: HAVING clauses.
 - `GroupBy`: GROUP BY expressions.
@@ -71,6 +71,54 @@ It is not designed for:
 - `Limit`: LIMIT/OFFSET metadata.
 - `SetOperations`: UNION/INTERSECT/EXCEPT branches.
 - `DerivedColumns`: Alias-to-expression map for derived projection columns.
+
+### Column Usage
+
+`ColumnUsage` describes a single reference to a column in the parsed statement. Beyond the basic fields (`TableAlias`, `Column`, `Expression`, `UsageType`, `Operator`, `Side`, `Context`), two fields surface function-call context around the column:
+
+- `Functions []string` — function names that wrap the column reference outside WHERE clauses (SELECT projection, ORDER BY, GROUP BY, HAVING, etc.). Listed in source order from outermost to innermost. Empty on WHERE-clause entries.
+- `Function *FunctionWrapper` — populated only on WHERE-clause filter usages whose subject column is wrapped by an allowlisted function. Nil otherwise.
+
+The asymmetry is deliberate: `Functions []string` is sufficient for projection-level introspection (a SQL formatter or column-rename tool), while `Function *FunctionWrapper` carries the typed metadata needed for predicate-level reasoning (a query rewriter or simulation tool that needs to know exactly which function wraps a filter column and what its other arguments are).
+
+#### `FunctionWrapper`
+
+```go
+type FunctionWrapper struct {
+    Name     string         // canonical lowercase, unqualified
+    Schema   string         // "" for unqualified or pg_catalog (canonicalised)
+    Args     []FunctionArg  // literal arguments other than the column itself
+    IsNested bool           // true when reached through additional wrappers
+    Cast     string         // outermost cast target type, "" if no cast
+}
+```
+
+The allowlist that triggers attribution is exactly eight functions: `length`, `lower`, `upper`, `coalesce`, `extract`, `date_trunc`, `char_length`, `octet_length`. These are the function calls whose presence in a predicate position changes the comparison's semantics in a way downstream consumers (ORMs, linters, query rewriters, AI-assisted SQL generators) typically key off.
+
+Attribution rules:
+
+- **Scope is WHERE-equivalent only.** WHERE clauses, the WHERE clause of UPDATE/DELETE, the WHERE clause inside CTE bodies, the WHERE clause inside subqueries, and the WHERE clause in each branch of UNION/INTERSECT/EXCEPT all attach wrappers. JOIN ON, ORDER BY, GROUP BY, HAVING, window PARTITION/ORDER, RETURNING, and SELECT projection do not — those use `Functions []string` only.
+- **Schema canonicalization.** Bare names and `pg_catalog.<name>` calls produce wrappers with `Schema = ""`. Any other schema (`public.foo(...)`, `myschema.length(...)`) rejects the wrapper outright.
+- **Outermost-only attribution.** When wrappers nest (`lower(lower(col))`, `length(lower(col))`), `Name` reflects the outermost call and `IsNested = true`. The inner chain is observable only via the flag, not enumerated.
+- **Casts.** A typecast around the wrapper as a whole (`length(col)::int`, `CAST(length(col) AS bigint)`) is captured in `Cast` as the textual target type. Chained casts record the outermost. A cast on the bare column (`col::int < 5`) does not produce a wrapper.
+- **Expression-wrapped columns are skipped.** When the function argument is itself an expression (`length(col || 'x')`, `lower(coalesce(name, ''))`), no wrapper is attached. Consumers needing this case should fall through to the standard column+operator interpretation.
+
+#### `FunctionArg`
+
+```go
+type FunctionArg struct {
+    Literal *string  // SQL textual form; nil = non-literal expression
+    IsNull  bool     // explicit SQL NULL keyword
+}
+```
+
+`FunctionArg` is a three-state encoding:
+
+- `Literal` non-nil, `IsNull` false → literal value present. Numerics, booleans, and intervals are stringified (`"0"`, `"true"`, `"1 day"`); string literals retain their surrounding quotes.
+- `Literal` nil, `IsNull` true → explicit `NULL` keyword.
+- `Literal` nil, `IsNull` false → non-literal expression at this position (column reference, sub-call, placeholder).
+
+Consumers requiring a specific literal value (`date_trunc` unit, `extract` field) MUST nil-check `Literal` before dereferencing, and fall back to the standard column+operator interpretation when nil.
 
 ## DML Shape
 
@@ -162,6 +210,23 @@ Notes:
 - For DDL identity, prefer structured values where available:
   - use `Schema` + `ObjectName` for action identity (`ObjectName` is unqualified)
   - use `Tables` when you need normalized relation references
+- For predicate analysis, key off `ColumnUsage.Function` rather than scanning the raw SQL or `Context` string. Walk filter usages, branch on `Function.Name`, and consult `Function.Args` for the literal arguments where needed:
+
+  ```go
+  for _, u := range result.ColumnUsage {
+      if u.UsageType != analysis.SQLUsageTypeFilter || u.Function == nil {
+          continue
+      }
+      switch u.Function.Name {
+      case "length", "char_length", "octet_length":
+          // length-class predicate on u.Column
+      case "lower", "upper":
+          // case-folding predicate on u.Column
+      case "date_trunc":
+          // u.Function.Args[0].Literal carries the unit when literal
+      }
+  }
+  ```
 
 ## Suggested Follow-up Issues
 
