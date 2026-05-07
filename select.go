@@ -347,11 +347,12 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 			Type:  TableTypeFunction,
 			Raw:   tableName,
 		})
-		// Check for LATERAL correlation
-		if prc, ok := ref.(antlr.ParserRuleContext); ok {
-			if strings.Contains(strings.ToUpper(ctxText(tokens, prc)), "LATERAL") {
-				detectLateralCorrelation(result, fn, tokens)
-			}
+		// Check for LATERAL correlation via the grammar's LATERAL_P terminal,
+		// not a substring scan of the rendered text. Identifiers whose names
+		// contain the literal "lateral" (e.g. bilateral_offsets) must not
+		// trigger detection.
+		if ref.LATERAL_P() != nil {
+			detectLateralCorrelation(result, fn, tokens)
 		}
 	} else if sub := ref.Select_with_parens(); sub != nil {
 		alias := aliasFromAliasClause(ref.Alias_clause(), tokens)

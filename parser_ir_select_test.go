@@ -494,3 +494,69 @@ func TestContainsWordDot(t *testing.T) {
 		assert.Equal(t, tt.want, got, "containsWordDot(%q, %q)", tt.text, tt.word)
 	}
 }
+
+// TestIR_LateralDetection_GrammarDriven validates that LATERAL detection is
+// driven by the grammar's LATERAL_P terminal, not a substring scan of the
+// rendered text.
+//
+// Positive cases: actual LATERAL keyword must continue to populate
+// Correlations when it correlates to an outer alias via the function text.
+//
+// Negative cases: identifiers whose names contain the substring "lateral"
+// (table, column, alias, string-literal, comment) must NOT trigger detection.
+func TestIR_LateralDetection_GrammarDriven(t *testing.T) {
+	t.Run("positive_cross_join_lateral_func_with_outer_correlation", func(t *testing.T) {
+		// CROSS JOIN LATERAL <func>(c.alias_ref) — outer alias `c` referenced.
+		sql := `SELECT * FROM customers c CROSS JOIN LATERAL generate_series(1, c.id) AS gs`
+		ir := parseAssertNoError(t, sql)
+
+		var found bool
+		for _, corr := range ir.Correlations {
+			if corr.Type == "LATERAL" && corr.OuterAlias == "c" {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "expected LATERAL correlation for outer alias 'c', got %+v", ir.Correlations)
+	})
+
+	t.Run("negative_table_name_contains_lateral_substring", func(t *testing.T) {
+		// `bilateral_offsets` contains "lateral" as a substring but the query
+		// has no LATERAL keyword anywhere. detectLateralCorrelation must not run.
+		sql := `SELECT * FROM bilateral_offsets bo
+			CROSS JOIN generate_series(1, 10) AS gs`
+		ir := parseAssertNoError(t, sql)
+
+		assert.Empty(t, ir.Correlations,
+			"no LATERAL keyword present; substring 'lateral' in table name must not trigger detection: %+v", ir.Correlations)
+	})
+
+	t.Run("negative_column_name_contains_lateral_substring", func(t *testing.T) {
+		sql := `SELECT lateral_value FROM metrics
+			CROSS JOIN generate_series(1, 10) AS gs`
+		ir := parseAssertNoError(t, sql)
+
+		assert.Empty(t, ir.Correlations,
+			"no LATERAL keyword present; substring 'lateral' in column name must not trigger detection: %+v", ir.Correlations)
+	})
+
+	t.Run("negative_string_literal_contains_lateral", func(t *testing.T) {
+		sql := `SELECT * FROM t
+			CROSS JOIN generate_series(1, 10) AS gs
+			WHERE notes = 'lateral metric notes'`
+		ir := parseAssertNoError(t, sql)
+
+		assert.Empty(t, ir.Correlations,
+			"no LATERAL keyword present; substring 'lateral' inside string literal must not trigger detection: %+v", ir.Correlations)
+	})
+
+	t.Run("negative_alias_contains_lateral_substring", func(t *testing.T) {
+		// Alias `lateral_alias` contains "lateral" as a substring; no LATERAL keyword.
+		sql := `SELECT * FROM events lateral_alias
+			CROSS JOIN generate_series(1, 10) AS gs`
+		ir := parseAssertNoError(t, sql)
+
+		assert.Empty(t, ir.Correlations,
+			"no LATERAL keyword present; substring 'lateral' in alias must not trigger detection: %+v", ir.Correlations)
+	})
+}
