@@ -495,15 +495,6 @@ func TestContainsWordDot(t *testing.T) {
 	}
 }
 
-// TestIR_LateralDetection_GrammarDriven validates that LATERAL detection is
-// driven by the grammar's LATERAL_P terminal, not a substring scan of the
-// rendered text.
-//
-// Positive cases: actual LATERAL keyword must continue to populate
-// Correlations when it correlates to an outer alias via the function text.
-//
-// Negative cases: identifiers whose names contain the substring "lateral"
-// (table, column, alias, string-literal, comment) must NOT trigger detection.
 func TestIR_LateralDetection_GrammarDriven(t *testing.T) {
 	t.Run("positive_cross_join_lateral_func_with_outer_correlation", func(t *testing.T) {
 		// CROSS JOIN LATERAL <func>(c.alias_ref) — outer alias `c` referenced.
