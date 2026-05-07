@@ -330,7 +330,7 @@ func buildSubqueryRef(alias string, selectWithParens gen.ISelect_with_parensCont
 		RawSQL:         rawSQL,
 		DerivedColumns: make(map[string]string),
 	}
-	if err := populateSelectFromResolvedNested(parsed, withClause, simple, selectNoParens, tokens, true); err != nil {
+	if err := populateSelectFromResolved(parsed, withClause, simple, selectNoParens, tokens, true); err != nil {
 		return nil, err
 	}
 
