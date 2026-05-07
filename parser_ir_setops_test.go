@@ -108,3 +108,35 @@ SELECT user_id FROM revoked_permissions`,
 		})
 	}
 }
+
+// TestIR_SetOpBranchLimitIsNested guards the isNested flag propagation through
+// the consolidated populateSelectFromResolved entry-point: a LIMIT on the
+// top-level select must report IsNested=false, while a LIMIT inside a
+// set-operation branch must report IsNested=true.
+func TestIR_SetOpBranchLimitIsNested(t *testing.T) {
+	sql := `
+(SELECT id FROM a)
+UNION ALL
+(SELECT id FROM b LIMIT 5)
+LIMIT 10`
+
+	ir := parseAssertNoError(t, sql)
+
+	require.NotNil(t, ir.Limit, "expected top-level LIMIT")
+	assert.Contains(t, ir.Limit.Limit, "10", "unexpected top-level LIMIT value")
+	assert.False(t, ir.Limit.IsNested, "expected IsNested=false on top-level LIMIT")
+
+	require.Len(t, ir.SetOperations, 1, "expected one set operation")
+	require.NotEmpty(t, ir.Subqueries, "expected set-op branch captured as subquery")
+
+	var branch *ParsedQuery
+	for _, sq := range ir.Subqueries {
+		if sq.Query != nil && sq.Query.Limit != nil {
+			branch = sq.Query
+			break
+		}
+	}
+	require.NotNil(t, branch, "expected a set-op branch ParsedQuery with a LIMIT")
+	assert.Contains(t, branch.Limit.Limit, "5", "unexpected branch LIMIT value")
+	assert.True(t, branch.Limit.IsNested, "expected IsNested=true on set-op branch LIMIT")
+}

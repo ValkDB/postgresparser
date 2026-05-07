@@ -17,17 +17,14 @@ func populateSelect(result *ParsedQuery, selectCtx gen.ISelectstmtContext, token
 	if err != nil {
 		return err
 	}
-	return populateSelectFromResolved(result, withClause, simple, selectNoParens, tokens)
+	return populateSelectFromResolved(result, withClause, simple, selectNoParens, tokens, false)
 }
 
 // populateSelectFromResolved fills the ParsedQuery using pre-resolved SELECT components.
+// Pass isNested=true when populating a subquery (e.g. a set-operation branch);
+// the flag is recorded on LimitClause.IsNested so callers can distinguish
+// branch-local LIMITs from a top-level LIMIT.
 func populateSelectFromResolved(result *ParsedQuery, withClause gen.IWith_clauseContext, simple gen.ISimple_select_pramaryContext,
-	selectNoParens gen.ISelect_no_parensContext, tokens antlr.TokenStream) error {
-	return populateSelectFromResolvedNested(result, withClause, simple, selectNoParens, tokens, false)
-}
-
-// populateSelectFromResolvedNested fills the ParsedQuery with nesting awareness.
-func populateSelectFromResolvedNested(result *ParsedQuery, withClause gen.IWith_clauseContext, simple gen.ISimple_select_pramaryContext,
 	selectNoParens gen.ISelect_no_parensContext, tokens antlr.TokenStream, isNested bool) error {
 	if result == nil {
 		return fmt.Errorf("select result container: %w", ErrNilContext)
