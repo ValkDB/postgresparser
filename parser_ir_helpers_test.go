@@ -192,6 +192,25 @@ func TestText(t *testing.T) {
 	})
 }
 
+func TestCreateTableConstraintName(t *testing.T) {
+	state, err := prepareParseState(`CREATE TABLE accounts (
+    id integer,
+    CONSTRAINT accounts_pk PRIMARY KEY (id)
+)`, false)
+	require.NoError(t, err)
+	require.Len(t, state.stmts, 1)
+
+	createStmt := state.stmts[0].Createstmt()
+	require.NotNil(t, createStmt)
+	tableElems := createStmt.Opttableelementlist().Tableelementlist().AllTableelement()
+	require.Len(t, tableElems, 2)
+
+	tableConstraint := tableElems[1].Tableconstraint()
+	require.NotNil(t, tableConstraint)
+	require.NotNil(t, tableConstraint.Name())
+	assert.Equal(t, "accounts_pk", createTableConstraintName(tableConstraint.Name(), state.stream))
+}
+
 // normalise collapses whitespace and lowercases strings for comparison convenience.
 func normalise(s string) string {
 	compact := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(s), " ", ""), "\n", ""), "\t", "")
