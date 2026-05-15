@@ -79,10 +79,7 @@ func recordSetTargetUsage(result *ParsedQuery, list gen.ISet_clause_listContext,
 		if ref.Name == "" {
 			continue
 		}
-		expression := ""
-		if prc, ok := target.(antlr.ParserRuleContext); ok {
-			expression = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		expression := text(tokens, target)
 		result.ColumnUsage = append(result.ColumnUsage, ColumnUsage{
 			TableAlias: ref.TableAlias,
 			Column:     ref.Name,
@@ -98,11 +95,8 @@ func appendReturningClause(result *ParsedQuery, returning gen.IReturning_clauseC
 	if returning == nil {
 		return
 	}
-	if prc, ok := returning.(antlr.ParserRuleContext); ok {
-		text := strings.TrimSpace(ctxText(tokens, prc))
-		if text != "" {
-			result.Returning = append(result.Returning, text)
-		}
+	if returningText := text(tokens, returning); returningText != "" {
+		result.Returning = append(result.Returning, returningText)
 	}
 	findAndRecordUsage(result, returning, ColumnUsageTypeReturning, tokens)
 }
@@ -115,16 +109,11 @@ func appendRelationOptAlias(result *ParsedQuery, rel gen.IRelation_expr_opt_alia
 	if rel.Relation_expr() == nil {
 		return
 	}
-	nameText := ""
-	if prc, ok := rel.Relation_expr().(antlr.ParserRuleContext); ok {
-		nameText = strings.TrimSpace(ctxText(tokens, prc))
-	}
+	nameText := text(tokens, rel.Relation_expr())
 	schema, name := splitQualifiedName(nameText)
 	alias := ""
 	if rel.Colid() != nil {
-		if prc, ok := rel.Colid().(antlr.ParserRuleContext); ok {
-			alias = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		alias = text(tokens, rel.Colid())
 	}
 	result.Tables = append(result.Tables, TableRef{
 		Schema: schema,

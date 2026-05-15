@@ -316,9 +316,7 @@ func aliasFromAliasClause(alias gen.IAlias_clauseContext, tokens antlr.TokenStre
 		return ""
 	}
 	if alias.Colid() != nil {
-		if prc, ok := alias.Colid().(antlr.ParserRuleContext); ok {
-			return strings.TrimSpace(ctxText(tokens, prc))
-		}
+		return text(tokens, alias.Colid())
 	}
 	return ""
 }
@@ -332,9 +330,16 @@ func aliasFromFuncAlias(alias gen.IFunc_alias_clauseContext, tokens antlr.TokenS
 		return aliasFromAliasClause(alias.Alias_clause(), tokens)
 	}
 	if alias.Colid() != nil {
-		if prc, ok := alias.Colid().(antlr.ParserRuleContext); ok {
-			return strings.TrimSpace(ctxText(tokens, prc))
-		}
+		return text(tokens, alias.Colid())
+	}
+	return ""
+}
+
+// text returns the trimmed source text covered by node, or "" when node is not
+// a parser rule context.
+func text(tokens antlr.TokenStream, node antlr.Tree) string {
+	if prc, ok := node.(antlr.ParserRuleContext); ok {
+		return strings.TrimSpace(ctxText(tokens, prc))
 	}
 	return ""
 }

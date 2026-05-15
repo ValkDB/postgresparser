@@ -144,22 +144,16 @@ func extractCTEs(withCtx gen.IWith_clauseContext, tokens antlr.TokenStream) ([]C
 		}
 		name := ""
 		if cteCtx.Name() != nil {
-			if prc, ok := cteCtx.Name().(antlr.ParserRuleContext); ok {
-				name = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			name = text(tokens, cteCtx.Name())
 		}
 		materialized := ""
 		if cteCtx.Materialized_() != nil {
-			if prc, ok := cteCtx.Materialized_().(antlr.ParserRuleContext); ok {
-				materialized = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			materialized = text(tokens, cteCtx.Materialized_())
 		}
 		query := ""
 		var parsedQuery *ParsedQuery
 		if cteCtx.Preparablestmt() != nil {
-			if prc, ok := cteCtx.Preparablestmt().(antlr.ParserRuleContext); ok {
-				query = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			query = text(tokens, cteCtx.Preparablestmt())
 
 			if stmtCtx := cteCtx.Preparablestmt(); stmtCtx != nil {
 				parsed, err := parsePreparableStmtToIR(stmtCtx, tokens, query, ParseOptions{})
@@ -194,9 +188,7 @@ func extractTablesFromPreparableStmt(stmt gen.IPreparablestmtContext, tokens ant
 	}
 
 	rawSQL := ""
-	if prc, ok := stmt.(antlr.ParserRuleContext); ok {
-		rawSQL = strings.TrimSpace(ctxText(tokens, prc))
-	}
+	rawSQL = text(tokens, stmt)
 
 	parsed, err := parsePreparableStmtToIR(stmt, tokens, rawSQL, ParseOptions{})
 	if err != nil {
@@ -244,22 +236,16 @@ func extractProjection(result *ParsedQuery, simple gen.ISimple_select_pramaryCon
 		case *gen.Target_labelContext:
 			expr := ""
 			if col.A_expr() != nil {
-				if prc, ok := col.A_expr().(antlr.ParserRuleContext); ok {
-					expr = strings.TrimSpace(ctxText(tokens, prc))
-				}
+				expr = text(tokens, col.A_expr())
 				findAndRecordUsage(result, col.A_expr(), ColumnUsageTypeProjection, tokens)
 				extractExpressionSubqueries(result, col.A_expr(), tokens)
 			}
 			alias := ""
 			switch {
 			case col.ColLabel() != nil:
-				if prc, ok := col.ColLabel().(antlr.ParserRuleContext); ok {
-					alias = strings.TrimSpace(ctxText(tokens, prc))
-				}
+				alias = text(tokens, col.ColLabel())
 			case col.BareColLabel() != nil:
-				if prc, ok := col.BareColLabel().(antlr.ParserRuleContext); ok {
-					alias = strings.TrimSpace(ctxText(tokens, prc))
-				}
+				alias = text(tokens, col.BareColLabel())
 			}
 			result.Columns = append(result.Columns, SelectColumn{
 				Expression: expr,
@@ -274,10 +260,8 @@ func extractProjection(result *ParsedQuery, simple gen.ISimple_select_pramaryCon
 				Expression: strings.TrimSpace(ctxText(tokens, col)),
 			})
 		default:
-			if prc, ok := col.(antlr.ParserRuleContext); ok {
-				result.Columns = append(result.Columns, SelectColumn{
-					Expression: strings.TrimSpace(ctxText(tokens, prc)),
-				})
+			if expr := text(tokens, col); expr != "" {
+				result.Columns = append(result.Columns, SelectColumn{Expression: expr})
 			}
 		}
 	}
@@ -313,9 +297,7 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 	if rel := ref.Relation_expr(); rel != nil {
 		name := ""
 		if rel.Qualified_name() != nil {
-			if prc, ok := rel.Qualified_name().(antlr.ParserRuleContext); ok {
-				name = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			name = text(tokens, rel.Qualified_name())
 		}
 		schema, relation := splitQualifiedName(name)
 		alias := aliasFromAliasClause(ref.Alias_clause(), tokens)
@@ -325,9 +307,7 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 		}
 
 		rawText := ""
-		if prc, ok := rel.(antlr.ParserRuleContext); ok {
-			rawText = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		rawText = text(tokens, rel)
 		result.Tables = append(result.Tables, TableRef{
 			Schema: schema,
 			Name:   relation,
@@ -337,9 +317,7 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 		})
 	} else if fn := ref.Func_table(); fn != nil {
 		tableName := ""
-		if prc, ok := fn.(antlr.ParserRuleContext); ok {
-			tableName = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		tableName = text(tokens, fn)
 		alias := aliasFromFuncAlias(ref.Func_alias_clause(), tokens)
 		result.Tables = append(result.Tables, TableRef{
 			Name:  tableName,
@@ -353,9 +331,7 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 	} else if sub := ref.Select_with_parens(); sub != nil {
 		alias := aliasFromAliasClause(ref.Alias_clause(), tokens)
 		raw := ""
-		if prc, ok := sub.(antlr.ParserRuleContext); ok {
-			raw = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		raw = text(tokens, sub)
 		result.Tables = append(result.Tables, TableRef{
 			Name:  alias,
 			Alias: alias,
@@ -497,8 +473,8 @@ func extractHavingClause(result *ParsedQuery, havingCtx gen.IHaving_clauseContex
 		return
 	}
 	if expr := havingCtx.A_expr(); expr != nil {
-		if prc, ok := expr.(antlr.ParserRuleContext); ok {
-			result.Having = append(result.Having, strings.TrimSpace(ctxText(tokens, prc)))
+		if clauseText := text(tokens, expr); clauseText != "" {
+			result.Having = append(result.Having, clauseText)
 		}
 		extractExpressionSubqueries(result, expr, tokens)
 		// HAVING: wrappers explicitly out of scope for v1 — pass false.
@@ -551,25 +527,17 @@ func extractOrderClause(result *ParsedQuery, sortCtxWrap gen.ISort_clause_Contex
 		dir := ""
 		nulls := ""
 		if item.A_expr() != nil {
-			if prc, ok := item.A_expr().(antlr.ParserRuleContext); ok {
-				expr = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			expr = text(tokens, item.A_expr())
 			findAndRecordUsage(result, item.A_expr(), ColumnUsageTypeOrderBy, tokens)
 		}
 		if item.Asc_desc_() != nil {
-			if prc, ok := item.Asc_desc_().(antlr.ParserRuleContext); ok {
-				dir = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			dir = text(tokens, item.Asc_desc_())
 		}
 		if item.Nulls_order_() != nil {
-			if prc, ok := item.Nulls_order_().(antlr.ParserRuleContext); ok {
-				nulls = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			nulls = text(tokens, item.Nulls_order_())
 		}
 		if expr == "" && item.Qual_all_op() != nil {
-			if prc, ok := item.Qual_all_op().(antlr.ParserRuleContext); ok {
-				expr = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			expr = text(tokens, item.Qual_all_op())
 		}
 		result.OrderBy = append(result.OrderBy, OrderExpression{
 			Expression: expr,
@@ -587,20 +555,14 @@ func extractLimitClause(result *ParsedQuery, selectNoParens gen.ISelect_no_paren
 	var limitText, offsetText string
 	if limitCtx := selectNoParens.Select_limit(); limitCtx != nil {
 		if limitClause := limitCtx.Limit_clause(); limitClause != nil {
-			if prc, ok := limitClause.(antlr.ParserRuleContext); ok {
-				limitText = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			limitText = text(tokens, limitClause)
 		}
 		if offsetClause := limitCtx.Offset_clause(); offsetClause != nil {
-			if prc, ok := offsetClause.(antlr.ParserRuleContext); ok {
-				offsetText = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			offsetText = text(tokens, offsetClause)
 		}
 	}
 	if limitCtx := selectNoParens.Select_limit_(); limitCtx != nil && limitText == "" && offsetText == "" {
-		if prc, ok := limitCtx.(antlr.ParserRuleContext); ok {
-			limitText = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		limitText = text(tokens, limitCtx)
 	}
 	if limitText != "" || offsetText != "" {
 		result.Limit = &LimitClause{Limit: limitText, Offset: offsetText, IsNested: isNested}

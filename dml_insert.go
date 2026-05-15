@@ -27,15 +27,11 @@ func populateInsert(result *ParsedQuery, ctx gen.IInsertstmtContext, tokens antl
 		qn := target.Qualified_name()
 		if qn != nil {
 			nameText := ""
-			if prc, ok := qn.(antlr.ParserRuleContext); ok {
-				nameText = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			nameText = text(tokens, qn)
 			schema, name := splitQualifiedName(nameText)
 			alias := ""
 			if target.Colid() != nil {
-				if prc, ok := target.Colid().(antlr.ParserRuleContext); ok {
-					alias = strings.TrimSpace(ctxText(tokens, prc))
-				}
+				alias = text(tokens, target.Colid())
 			}
 			tbl := TableRef{
 				Schema: schema,
@@ -92,15 +88,13 @@ func buildUpsertClause(result *ParsedQuery, conflict gen.IOn_conflict_Context, t
 			findAndRecordUsage(result, params, ColumnUsageTypeUpsertTarget, tokens)
 		}
 		if confExpr.Where_clause() != nil {
-			if prc, ok := confExpr.Where_clause().(antlr.ParserRuleContext); ok {
-				upsert.TargetWhere = strings.TrimSpace(ctxText(tokens, prc))
-				findAndRecordUsage(result, prc, ColumnUsageTypeFilter, tokens)
+			if targetWhere := text(tokens, confExpr.Where_clause()); targetWhere != "" {
+				upsert.TargetWhere = targetWhere
+				findAndRecordUsage(result, confExpr.Where_clause(), ColumnUsageTypeFilter, tokens)
 			}
 		}
 		if confExpr.Name() != nil {
-			if prc, ok := confExpr.Name().(antlr.ParserRuleContext); ok {
-				upsert.Constraint = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			upsert.Constraint = text(tokens, confExpr.Name())
 		}
 	}
 	switch {
@@ -114,9 +108,9 @@ func buildUpsertClause(result *ParsedQuery, conflict gen.IOn_conflict_Context, t
 			findAndRecordUsage(result, scl, ColumnUsageTypeUpsertSet, tokens)
 		}
 		if where := conflict.Where_clause(); where != nil {
-			if prc, ok := where.(antlr.ParserRuleContext); ok {
-				upsert.ActionWhere = strings.TrimSpace(ctxText(tokens, prc))
-				findAndRecordUsage(result, prc, ColumnUsageTypeFilter, tokens)
+			if actionWhere := text(tokens, where); actionWhere != "" {
+				upsert.ActionWhere = actionWhere
+				findAndRecordUsage(result, where, ColumnUsageTypeFilter, tokens)
 			}
 		}
 	default:
