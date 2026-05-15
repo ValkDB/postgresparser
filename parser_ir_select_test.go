@@ -234,6 +234,44 @@ func TestIR_LimitOffset(t *testing.T) {
 	assert.Contains(t, strings.ToUpper(ir.Limit.Offset), "OFFSET 5", "unexpected offset text")
 }
 
+// TestIR_TextExtractionAcrossSelectFields keeps the shared text helper covered
+// across the SELECT fields that rely on trimmed parser-source extraction.
+func TestIR_TextExtractionAcrossSelectFields(t *testing.T) {
+	sql := `
+WITH active_users AS MATERIALIZED (
+  SELECT id FROM users
+)
+SELECT active_users.id AS user_id
+FROM active_users
+ORDER BY active_users.id DESC NULLS LAST
+LIMIT 10 OFFSET 2`
+
+	ir := parseAssertNoError(t, sql)
+
+	require.Len(t, ir.CTEs, 1, "expected 1 CTE")
+	assert.Equal(t, "active_users", ir.CTEs[0].Name, "unexpected CTE name")
+	assert.Equal(t, "MATERIALIZED", ir.CTEs[0].Materialized, "unexpected CTE materialization")
+	assert.Contains(t, ir.CTEs[0].Query, "SELECT id FROM users", "unexpected CTE query")
+
+	require.Len(t, ir.Columns, 1, "expected 1 projected column")
+	assert.Equal(t, "active_users.id", ir.Columns[0].Expression, "unexpected projection expression")
+	assert.Equal(t, "user_id", ir.Columns[0].Alias, "unexpected projection alias")
+
+	require.Len(t, ir.Tables, 2, "expected base table plus CTE reference")
+	assert.Equal(t, "active_users", ir.Tables[1].Name, "unexpected CTE table reference")
+	assert.Equal(t, TableTypeCTE, ir.Tables[1].Type, "unexpected table type")
+	assert.Equal(t, "active_users", ir.Tables[1].Raw, "unexpected raw table text")
+
+	require.Len(t, ir.OrderBy, 1, "expected 1 ORDER BY")
+	assert.Equal(t, "active_users.id", ir.OrderBy[0].Expression, "unexpected ORDER BY expression")
+	assert.Equal(t, "DESC", ir.OrderBy[0].Direction, "unexpected ORDER BY direction")
+	assert.Equal(t, "NULLS LAST", ir.OrderBy[0].Nulls, "unexpected ORDER BY nulls")
+
+	require.NotNil(t, ir.Limit, "expected LIMIT metadata")
+	assert.Equal(t, "LIMIT 10", ir.Limit.Limit, "unexpected LIMIT text")
+	assert.Equal(t, "OFFSET 2", ir.Limit.Offset, "unexpected OFFSET text")
+}
+
 // TestIR_Parameters ensures positional and anonymous parameters are recorded.
 func TestIR_Parameters(t *testing.T) {
 	sql := `SELECT * FROM users WHERE age > ? AND id = $2`

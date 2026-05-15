@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -168,6 +169,46 @@ func TestCollectAlterTableConstraintColumns(t *testing.T) {
 
 	got := collectAlterTableConstraintColumns(pk, fks)
 	assert.Equal(t, []string{"id", `"CaseSensitive"`, "org_id", "branch_id"}, got)
+}
+
+func TestText(t *testing.T) {
+	state, err := prepareParseState("SELECT  id  FROM users", false)
+	require.NoError(t, err)
+	require.Len(t, state.stmts, 1)
+
+	selectStmt := state.stmts[0].Selectstmt()
+	require.NotNil(t, selectStmt)
+
+	t.Run("parser rule context", func(t *testing.T) {
+		assert.Equal(t, "SELECT  id  FROM users", text(state.stream, selectStmt))
+	})
+
+	t.Run("nil node", func(t *testing.T) {
+		assert.Empty(t, text(state.stream, nil))
+	})
+
+	t.Run("non rule node", func(t *testing.T) {
+		assert.Empty(t, text(state.stream, antlr.NewTerminalNodeImpl(nil)))
+	})
+}
+
+func TestCreateTableConstraintName(t *testing.T) {
+	state, err := prepareParseState(`CREATE TABLE accounts (
+    id integer,
+    CONSTRAINT accounts_pk PRIMARY KEY (id)
+)`, false)
+	require.NoError(t, err)
+	require.Len(t, state.stmts, 1)
+
+	createStmt := state.stmts[0].Createstmt()
+	require.NotNil(t, createStmt)
+	tableElems := createStmt.Opttableelementlist().Tableelementlist().AllTableelement()
+	require.Len(t, tableElems, 2)
+
+	tableConstraint := tableElems[1].Tableconstraint()
+	require.NotNil(t, tableConstraint)
+	require.NotNil(t, tableConstraint.Name())
+	assert.Equal(t, "accounts_pk", createTableConstraintName(tableConstraint.Name(), state.stream))
 }
 
 // normalise collapses whitespace and lowercases strings for comparison convenience.

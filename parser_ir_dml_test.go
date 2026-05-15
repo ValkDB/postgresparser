@@ -239,6 +239,22 @@ RETURNING sessions.id`,
 	}
 }
 
+func TestIR_UpsertTargetAndActionWhereText(t *testing.T) {
+	sql := `
+INSERT INTO accounts (id, email, active)
+VALUES ($1, $2, true)
+ON CONFLICT (id) WHERE active = true
+DO UPDATE SET email = EXCLUDED.email
+WHERE accounts.active = true`
+
+	ir := parseAssertNoError(t, sql)
+
+	require.NotNil(t, ir.Upsert, "expected upsert metadata")
+	assert.Equal(t, "DO UPDATE", ir.Upsert.Action, "unexpected upsert action")
+	assert.Equal(t, "WHERE active = true", ir.Upsert.TargetWhere, "unexpected target WHERE text")
+	assert.Equal(t, "WHERE accounts.active = true", ir.Upsert.ActionWhere, "unexpected action WHERE text")
+}
+
 // TestIR_InsertOnConflictCapturesSetClauses validates DO UPDATE metadata.
 func TestIR_InsertOnConflictCapturesSetClauses(t *testing.T) {
 	sql := `

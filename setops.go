@@ -189,9 +189,7 @@ func collectIntersectOperationsWithResult(node gen.ISimple_select_intersectConte
 // buildSetOperationFromIntersect materialises metadata for a UNION/EXCEPT right-hand SELECT.
 func buildSetOperationFromIntersect(opType string, rhs gen.ISimple_select_intersectContext, tokens antlr.TokenStream, cteNames map[string]struct{}, result *ParsedQuery) (SetOperation, []SubqueryRef) {
 	query := ""
-	if prc, ok := rhs.(antlr.ParserRuleContext); ok {
-		query = strings.TrimSpace(ctxText(tokens, prc))
-	}
+	query = text(tokens, rhs)
 	op := SetOperation{
 		Type:  strings.TrimSpace(opType),
 		Query: query,
@@ -211,9 +209,7 @@ func buildSetOperationFromIntersect(opType string, rhs gen.ISimple_select_inters
 func buildSetOperationFromPrimary(opType string, primary gen.ISimple_select_pramaryContext, tokens antlr.TokenStream, cteNames map[string]struct{}) (SetOperation, []SubqueryRef) {
 	tables, subqueries := extractTablesForPrimary(primary, tokens, cteNames)
 	query := ""
-	if prc, ok := primary.(antlr.ParserRuleContext); ok {
-		query = strings.TrimSpace(ctxText(tokens, prc))
-	}
+	query = text(tokens, primary)
 	return SetOperation{
 		Type:    strings.TrimSpace(opType),
 		Query:   query,
@@ -283,9 +279,7 @@ func extractTablesAndUsageForPrimary(primary gen.ISimple_select_pramaryContext, 
 	}
 	if primary.TABLE() != nil && primary.Relation_expr() != nil {
 		name := ""
-		if prc, ok := primary.Relation_expr().(antlr.ParserRuleContext); ok {
-			name = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		name = text(tokens, primary.Relation_expr())
 		schema, relation := splitQualifiedName(name)
 		tableType := TableTypeBase
 		if _, ok := cteNames[strings.ToLower(relation)]; ok {
@@ -322,9 +316,7 @@ func buildSubqueryRef(alias string, selectWithParens gen.ISelect_with_parensCont
 		return nil, fmt.Errorf("unable to resolve subquery select")
 	}
 	rawSQL := ""
-	if prc, ok := selectWithParens.(antlr.ParserRuleContext); ok {
-		rawSQL = strings.TrimSpace(ctxText(tokens, prc))
-	}
+	rawSQL = text(tokens, selectWithParens)
 	parsed := &ParsedQuery{
 		Command:        QueryCommandSelect,
 		RawSQL:         rawSQL,

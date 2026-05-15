@@ -24,9 +24,7 @@ func populateCreateTable(result *ParsedQuery, ctx gen.ICreatestmtContext, tokens
 
 	tableRaw := ""
 	if qualified := ctx.Qualified_name(0); qualified != nil {
-		if prc, ok := qualified.(antlr.ParserRuleContext); ok {
-			tableRaw = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		tableRaw = text(tokens, qualified)
 	}
 	schema, tableName := splitQualifiedName(tableRaw)
 	if tableRaw != "" {
@@ -95,9 +93,7 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 
 	var col DDLColumn
 	if colid := colDef.Colid(); colid != nil {
-		if prc, ok := colid.(antlr.ParserRuleContext); ok {
-			col.Name = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		col.Name = text(tokens, colid)
 		if col.Name == "" {
 			col.Name = strings.TrimSpace(colid.GetText())
 		}
@@ -127,9 +123,7 @@ func extractCreateTableColumn(colDef gen.IColumnDefContext, tokens antlr.TokenSt
 			}
 
 			if elem.DEFAULT() != nil && elem.B_expr() != nil {
-				if prc, ok := elem.B_expr().(antlr.ParserRuleContext); ok {
-					col.Default = strings.TrimSpace(ctxText(tokens, prc))
-				}
+				col.Default = text(tokens, elem.B_expr())
 			}
 		}
 	}
@@ -191,9 +185,7 @@ func extractCreateTableColumnConstraints(colDef gen.IColumnDefContext, tokens an
 
 	colName := ""
 	if colid := colDef.Colid(); colid != nil {
-		if prc, ok := colid.(antlr.ParserRuleContext); ok {
-			colName = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		colName = text(tokens, colid)
 		if colName == "" {
 			colName = strings.TrimSpace(colid.GetText())
 		}
@@ -237,9 +229,7 @@ func extractCreateTableColumnConstraints(colDef gen.IColumnDefContext, tokens an
 
 		if elem.CHECK() != nil && elem.A_expr() != nil {
 			expr := ""
-			if prc, ok := elem.A_expr().(antlr.ParserRuleContext); ok {
-				expr = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			expr = text(tokens, elem.A_expr())
 			if expr != "" {
 				out.CheckConstraints = append(out.CheckConstraints, DDLCheckConstraint{
 					ConstraintName: constraintName,
@@ -296,9 +286,7 @@ func extractCreateTableTableConstraint(tableConstraint gen.ITableconstraintConte
 
 	if elem.CHECK() != nil && elem.A_expr() != nil {
 		expr := ""
-		if prc, ok := elem.A_expr().(antlr.ParserRuleContext); ok {
-			expr = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		expr = text(tokens, elem.A_expr())
 		if expr != "" {
 			out.CheckConstraints = append(out.CheckConstraints, DDLCheckConstraint{
 				ConstraintName: constraintName,
@@ -322,9 +310,7 @@ func createTableForeignKeyFromReference(
 ) DDLForeignKey {
 	refRaw := ""
 	if referencedTable != nil {
-		if prc, ok := referencedTable.(antlr.ParserRuleContext); ok {
-			refRaw = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		refRaw = text(tokens, referencedTable)
 		if refRaw == "" {
 			refRaw = strings.TrimSpace(referencedTable.GetText())
 		}
@@ -386,8 +372,8 @@ func createTableConstraintName(name gen.INameContext, tokens antlr.TokenStream) 
 	if name == nil {
 		return ""
 	}
-	if prc, ok := name.(antlr.ParserRuleContext); ok {
-		return strings.TrimSpace(ctxText(tokens, prc))
+	if nameText := text(tokens, name); nameText != "" {
+		return nameText
 	}
 	return strings.TrimSpace(name.GetText())
 }
@@ -424,9 +410,7 @@ func extractCreateTableColumnNames(columnList gen.IColumnlistContext, tokens ant
 			continue
 		}
 		colName := ""
-		if prc, ok := colElem.Colid().(antlr.ParserRuleContext); ok {
-			colName = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		colName = text(tokens, colElem.Colid())
 		if colName == "" {
 			colName = strings.TrimSpace(colElem.Colid().GetText())
 		}
@@ -652,9 +636,7 @@ func populateAlterTableCmd(result *ParsedQuery, cmd gen.IAlter_table_cmdContext,
 		colName := ""
 		if colDef := cmd.ColumnDef(); colDef != nil {
 			if colDef.Colid() != nil {
-				if prc, ok := colDef.Colid().(antlr.ParserRuleContext); ok {
-					colName = strings.TrimSpace(ctxText(tokens, prc))
-				}
+				colName = text(tokens, colDef.Colid())
 			}
 		}
 		if colName == "" {
@@ -704,9 +686,7 @@ func extractAlterCmdColumnName(cmd gen.IAlter_table_cmdContext, tokens antlr.Tok
 	// The column name is usually the first Colid child.
 	colids := cmd.AllColid()
 	if len(colids) > 0 {
-		if prc, ok := colids[0].(antlr.ParserRuleContext); ok {
-			return strings.TrimSpace(ctxText(tokens, prc))
-		}
+		return text(tokens, colids[0])
 	}
 	return ""
 }
@@ -753,13 +733,11 @@ func extractRelationExprNameParts(rel gen.IRelation_exprContext, tokens antlr.To
 	if rel == nil {
 		return "", "", ""
 	}
-	if prc, ok := rel.(antlr.ParserRuleContext); ok {
-		raw = strings.TrimSpace(ctxText(tokens, prc))
-	}
+	raw = text(tokens, rel)
 
 	if qualified := rel.Qualified_name(); qualified != nil {
-		if prc, ok := qualified.(antlr.ParserRuleContext); ok {
-			schema, name = splitQualifiedName(strings.TrimSpace(ctxText(tokens, prc)))
+		if qualifiedText := text(tokens, qualified); qualifiedText != "" {
+			schema, name = splitQualifiedName(qualifiedText)
 			return raw, schema, name
 		}
 	}
@@ -775,9 +753,7 @@ func populateCreateIndex(result *ParsedQuery, ctx gen.IIndexstmtContext, tokens 
 
 	indexRaw := ""
 	if idx := ctx.Index_name_(); idx != nil {
-		if prc, ok := idx.(antlr.ParserRuleContext); ok {
-			indexRaw = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		indexRaw = text(tokens, idx)
 	}
 
 	tableRaw := ""
@@ -821,9 +797,7 @@ func populateCreateIndex(result *ParsedQuery, ctx gen.IIndexstmtContext, tokens 
 	indexType := ""
 	if amc := ctx.Access_method_clause(); amc != nil {
 		if amc.Name() != nil {
-			if prc, ok := amc.Name().(antlr.ParserRuleContext); ok {
-				indexType = strings.TrimSpace(ctxText(tokens, prc))
-			}
+			indexType = text(tokens, amc.Name())
 		}
 	}
 

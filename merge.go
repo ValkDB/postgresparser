@@ -32,9 +32,7 @@ func populateMerge(result *ParsedQuery, ctx gen.IMergestmtContext, tokens antlr.
 	qualifiedNames := ctx.AllQualified_name()
 	if len(qualifiedNames) > 0 {
 		targetName := ""
-		if prc, ok := qualifiedNames[0].(antlr.ParserRuleContext); ok {
-			targetName = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		targetName = text(tokens, qualifiedNames[0])
 		schema, relation := splitQualifiedName(targetName)
 		merge.Target = TableRef{
 			Schema: schema,
@@ -56,9 +54,7 @@ func populateMerge(result *ParsedQuery, ctx gen.IMergestmtContext, tokens antlr.
 
 	if swp := ctx.Select_with_parens(); swp != nil {
 		raw := ""
-		if prc, ok := swp.(antlr.ParserRuleContext); ok {
-			raw = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		raw = text(tokens, swp)
 		merge.Source.Table = TableRef{
 			Name:  sourceAlias,
 			Alias: sourceAlias,
@@ -75,9 +71,7 @@ func populateMerge(result *ParsedQuery, ctx gen.IMergestmtContext, tokens antlr.
 		}
 	} else if len(qualifiedNames) > 1 {
 		sourceName := ""
-		if prc, ok := qualifiedNames[1].(antlr.ParserRuleContext); ok {
-			sourceName = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		sourceName = text(tokens, qualifiedNames[1])
 		schema, relation := splitQualifiedName(sourceName)
 		merge.Source.Table = TableRef{
 			Schema: schema,
@@ -93,9 +87,7 @@ func populateMerge(result *ParsedQuery, ctx gen.IMergestmtContext, tokens antlr.
 	}
 
 	if cond := ctx.A_expr(); cond != nil {
-		if prc, ok := cond.(antlr.ParserRuleContext); ok {
-			merge.Condition = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		merge.Condition = text(tokens, cond)
 		findAndRecordUsage(result, cond, ColumnUsageTypeJoin, tokens)
 	}
 
@@ -133,18 +125,14 @@ func buildMergeInsertAction(result *ParsedQuery, ctx *gen.Merge_insert_clauseCon
 	}
 	action := MergeAction{Type: "INSERT"}
 	if cond := ctx.A_expr(); cond != nil {
-		if prc, ok := cond.(antlr.ParserRuleContext); ok {
-			action.Condition = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		action.Condition = text(tokens, cond)
 		findAndRecordUsage(result, cond, ColumnUsageTypeFilter, tokens)
 	}
 	if cols := ctx.Insert_column_list(); cols != nil {
 		action.InsertColumns = extractInsertColumns(cols, tokens)
 	}
 	if values := ctx.Values_clause(); values != nil {
-		if prc, ok := values.(antlr.ParserRuleContext); ok {
-			action.InsertValues = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		action.InsertValues = text(tokens, values)
 		findAndRecordUsage(result, values, ColumnUsageTypeMergeInsert, tokens)
 	}
 	return action
@@ -157,9 +145,7 @@ func buildMergeUpdateAction(result *ParsedQuery, ctx *gen.Merge_update_clauseCon
 	}
 	action := MergeAction{Type: "UPDATE"}
 	if cond := ctx.A_expr(); cond != nil {
-		if prc, ok := cond.(antlr.ParserRuleContext); ok {
-			action.Condition = strings.TrimSpace(ctxText(tokens, prc))
-		}
+		action.Condition = text(tokens, cond)
 		findAndRecordUsage(result, cond, ColumnUsageTypeFilter, tokens)
 	}
 	if scl := ctx.Set_clause_list(); scl != nil {
