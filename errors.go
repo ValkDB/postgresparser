@@ -44,9 +44,6 @@ type SyntaxError struct {
 	Message string
 	// TokenIndex is the offending token index when available; -1 when unknown.
 	TokenIndex int
-	// TokenLength is the rune length of the offending token, used for caret
-	// width. Zero when unknown, in which case a single caret is rendered.
-	TokenLength int
 }
 
 // ParseErrors aggregates syntax errors encountered while parsing a SQL string.
@@ -85,14 +82,8 @@ func formatSyntaxError(err SyntaxError, lines []string) string {
 	gutter := fmt.Sprintf("  %d | ", err.Line)
 	caretPad := strings.Repeat(" ", len(gutter)) + caretIndent(src, err.Column)
 
-	width := err.TokenLength
-	if width < 1 {
-		width = 1
-	}
-	caret := strings.Repeat("^", width)
-
-	return fmt.Sprintf("%s\n%s%s\n%s%s\n%s%s",
-		header, gutter, src, caretPad, caret, strings.Repeat(" ", len(gutter)), err.Message)
+	return fmt.Sprintf("%s\n%s%s\n%s^\n%s%s",
+		header, gutter, src, caretPad, strings.Repeat(" ", len(gutter)), err.Message)
 }
 
 // caretIndent builds the whitespace that positions a caret under column col of
@@ -138,16 +129,13 @@ type parseErrorListener struct {
 func (l *parseErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSymbol interface{},
 	line, column int, msg string, e antlr.RecognitionException) {
 	tokenIndex := -1
-	tokenLength := 0
 	if tok, ok := offendingSymbol.(antlr.Token); ok && tok != nil {
 		tokenIndex = tok.GetTokenIndex()
-		tokenLength = len([]rune(tok.GetText()))
 	}
 	l.errs = append(l.errs, SyntaxError{
-		Line:        line,
-		Column:      column,
-		Message:     msg,
-		TokenIndex:  tokenIndex,
-		TokenLength: tokenLength,
+		Line:       line,
+		Column:     column,
+		Message:    msg,
+		TokenIndex: tokenIndex,
 	})
 }

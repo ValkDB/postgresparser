@@ -80,26 +80,16 @@ func TestParseErrors_Error_Multiple(t *testing.T) {
 	assert.Contains(t, s, "\n\n", "expected blank line separating error blocks")
 }
 
-// TestParseErrors_Error_CaretWidthMatchesTokenLength checks the caret spans the
-// whole offending token when its length is known.
-func TestParseErrors_Error_CaretWidthMatchesTokenLength(t *testing.T) {
-	pe := &ParseErrors{
-		SQL:    "SELECT FROM",
-		Errors: []SyntaxError{{Line: 1, Column: 7, Message: "bad", TokenLength: 4}},
-	}
-	caret := caretLineOf(t, pe.Error())
-	assert.Equal(t, "^^^^", strings.TrimLeft(caret, " "), "caret width should equal token length")
-}
-
-// TestParseErrors_Error_SingleCaretWhenTokenLengthUnknown checks a zero token
-// length degrades to a single caret rather than an empty one.
-func TestParseErrors_Error_SingleCaretWhenTokenLengthUnknown(t *testing.T) {
+// TestParseErrors_Error_RendersSingleCaret checks the caret line carries exactly
+// one caret positioned at the reported column.
+func TestParseErrors_Error_RendersSingleCaret(t *testing.T) {
 	pe := &ParseErrors{
 		SQL:    "SELECT FROM",
 		Errors: []SyntaxError{{Line: 1, Column: 7, Message: "bad"}},
 	}
 	caret := caretLineOf(t, pe.Error())
-	assert.Equal(t, "^", strings.TrimLeft(caret, " "), "expected a single caret when token length is unknown")
+	assert.Equal(t, "^", strings.TrimLeft(caret, " "), "expected a single caret")
+	assert.Equal(t, len("  1 | ")+7, strings.IndexByte(caret, '^'), "caret should sit at the reported column")
 }
 
 // TestParseErrors_Error_LineOutOfRange checks errors pointing past the last
@@ -120,7 +110,7 @@ func TestParseErrors_Error_LineOutOfRange(t *testing.T) {
 func TestParseErrors_Error_SelectsReportedSourceLine(t *testing.T) {
 	pe := &ParseErrors{
 		SQL:    "SELECT a\nFROM t\nWHERE",
-		Errors: []SyntaxError{{Line: 3, Column: 0, Message: "incomplete", TokenLength: 5}},
+		Errors: []SyntaxError{{Line: 3, Column: 0, Message: "incomplete"}},
 	}
 	s := pe.Error()
 	assert.Contains(t, s, "3 | WHERE", "expected the line-3 source in the gutter")
@@ -132,7 +122,7 @@ func TestParseErrors_Error_SelectsReportedSourceLine(t *testing.T) {
 func TestParseErrors_Error_PreservesTabIndent(t *testing.T) {
 	pe := &ParseErrors{
 		SQL:    "SELECT\n\tFROM x",
-		Errors: []SyntaxError{{Line: 2, Column: 1, Message: "bad", TokenLength: 4}},
+		Errors: []SyntaxError{{Line: 2, Column: 1, Message: "bad"}},
 	}
 	caret := caretLineOf(t, pe.Error())
 	assert.Contains(t, caret, "\t", "caret indent should preserve the source tab")
