@@ -44,6 +44,9 @@ type SyntaxError struct {
 	Message string
 	// TokenIndex is the offending token index when available; -1 when unknown.
 	TokenIndex int
+	// TokenLength is the rune length of the offending token, used for caret
+	// width. Zero when unknown, in which case a single caret is rendered.
+	TokenLength int
 }
 
 // ParseErrors aggregates syntax errors encountered while parsing a SQL string.
@@ -52,20 +55,62 @@ type ParseErrors struct {
 	Errors []SyntaxError
 }
 
-// Error formats the aggregated syntax errors into a single string.
+// Error formats the aggregated syntax errors, rendering each as a source line
+// with a caret pointing at the offending token. Multiple errors are separated
+// by a blank line.
 func (p *ParseErrors) Error() string {
 	if p == nil || len(p.Errors) == 0 {
 		return "parse error"
 	}
-	if len(p.Errors) == 1 {
-		err := p.Errors[0]
-		return fmt.Sprintf("parse error: line %d:%d %s", err.Line, err.Column, err.Message)
-	}
-	parts := make([]string, len(p.Errors))
+	lines := strings.Split(p.SQL, "\n")
+	blocks := make([]string, len(p.Errors))
 	for i, err := range p.Errors {
-		parts[i] = fmt.Sprintf("line %d:%d %s", err.Line, err.Column, err.Message)
+		blocks[i] = formatSyntaxError(err, lines)
 	}
-	return fmt.Sprintf("parse error(s): %s", strings.Join(parts, "; "))
+	return strings.Join(blocks, "\n\n")
+}
+
+// formatSyntaxError renders one syntax error. When the source line is
+// available it shows that line with a caret underneath; otherwise it falls
+// back to the header plus message only.
+func formatSyntaxError(err SyntaxError, lines []string) string {
+	header := fmt.Sprintf("parse error at line %d:%d", err.Line, err.Column)
+
+	idx := err.Line - 1
+	if idx < 0 || idx >= len(lines) {
+		return fmt.Sprintf("%s\n  %s", header, err.Message)
+	}
+
+	src := lines[idx]
+	gutter := fmt.Sprintf("  %d | ", err.Line)
+	caretPad := strings.Repeat(" ", len(gutter)) + caretIndent(src, err.Column)
+
+	width := err.TokenLength
+	if width < 1 {
+		width = 1
+	}
+	caret := strings.Repeat("^", width)
+
+	return fmt.Sprintf("%s\n%s%s\n%s%s\n%s%s",
+		header, gutter, src, caretPad, caret, strings.Repeat(" ", len(gutter)), err.Message)
+}
+
+// caretIndent builds the whitespace that positions a caret under column col of
+// src, preserving tabs so alignment holds in tab-indented input.
+func caretIndent(src string, col int) string {
+	if col < 0 {
+		col = 0
+	}
+	runes := []rune(src)
+	var b strings.Builder
+	for i := 0; i < col; i++ {
+		if i < len(runes) && runes[i] == '\t' {
+			b.WriteByte('\t')
+		} else {
+			b.WriteByte(' ')
+		}
+	}
+	return b.String()
 }
 
 // replaceErrorListeners removes ANTLR's default console listener so parse
@@ -93,13 +138,16 @@ type parseErrorListener struct {
 func (l *parseErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSymbol interface{},
 	line, column int, msg string, e antlr.RecognitionException) {
 	tokenIndex := -1
+	tokenLength := 0
 	if tok, ok := offendingSymbol.(antlr.Token); ok && tok != nil {
 		tokenIndex = tok.GetTokenIndex()
+		tokenLength = len([]rune(tok.GetText()))
 	}
 	l.errs = append(l.errs, SyntaxError{
-		Line:       line,
-		Column:     column,
-		Message:    msg,
-		TokenIndex: tokenIndex,
+		Line:        line,
+		Column:      column,
+		Message:     msg,
+		TokenIndex:  tokenIndex,
+		TokenLength: tokenLength,
 	})
 }
