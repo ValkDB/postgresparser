@@ -40,3 +40,41 @@ SELECT`
 
 	assert.Contains(t, perr.Error(), "line", "expected error message to include line information")
 }
+
+// TestParseErrors_Error_NilReceiver validates Error() on a nil ParseErrors receiver.
+func TestParseErrors_Error_NilReceiver(t *testing.T) {
+	var pe *ParseErrors
+	assert.Equal(t, "parse error", pe.Error(), "expected 'parse error'")
+}
+
+// TestParseErrors_Error_Empty checks Error() with an empty error list.
+func TestParseErrors_Error_Empty(t *testing.T) {
+	pe := &ParseErrors{SQL: "test", Errors: nil}
+	assert.Equal(t, "parse error", pe.Error(), "expected 'parse error'")
+}
+
+// TestParseErrors_Error_Single verifies Error() formatting with one syntax error.
+func TestParseErrors_Error_Single(t *testing.T) {
+	pe := &ParseErrors{
+		SQL:    "test",
+		Errors: []SyntaxError{{Line: 1, Column: 5, Message: "bad token"}},
+	}
+	s := pe.Error()
+	assert.Contains(t, s, "line 1:5", "unexpected error string")
+	assert.Contains(t, s, "bad token", "unexpected error string")
+}
+
+// TestParseErrors_Error_Multiple confirms Error() formatting with multiple syntax errors.
+func TestParseErrors_Error_Multiple(t *testing.T) {
+	pe := &ParseErrors{
+		SQL: "test",
+		Errors: []SyntaxError{
+			{Line: 1, Column: 5, Message: "bad token"},
+			{Line: 2, Column: 3, Message: "unexpected EOF"},
+		},
+	}
+	s := pe.Error()
+	assert.Contains(t, s, "line 1:5", "expected error location 1")
+	assert.Contains(t, s, "line 2:3", "expected error location 2")
+	assert.Contains(t, s, "\n\n", "expected blank line separating error blocks")
+}
