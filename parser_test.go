@@ -727,3 +727,34 @@ func TestParseSQLStrictWithOptions_Table(t *testing.T) {
 		})
 	}
 }
+
+func TestParseErrorRendersSourceLineWithCaret(t *testing.T) {
+	_, err := ParseSQL("SELECT FROM")
+
+	var perr *ParseErrors
+	require.ErrorAs(t, err, &perr)
+	require.Len(t, perr.Errors, 1)
+
+	got := perr.Error()
+	first := perr.Errors[0]
+
+	assert.Contains(t, got, "SELECT FROM", "expected the offending source line")
+	assert.Contains(t, got, "1 | SELECT FROM", "expected a numbered source gutter")
+	assert.Contains(t, got, "^", "expected a caret pointing at the offending token")
+	assert.Contains(t, got, first.Message, "expected the underlying parser message")
+
+	caretLine := caretLineFor(t, got)
+	assert.Equal(t, first.Column, strings.IndexByte(caretLine, '^')-len("  1 | "),
+		"caret column should align with the reported error column")
+}
+
+func caretLineFor(t *testing.T, rendered string) string {
+	t.Helper()
+	for _, line := range strings.Split(rendered, "\n") {
+		if strings.Contains(line, "^") {
+			return line
+		}
+	}
+	t.Fatalf("no caret line in rendered error:\n%s", rendered)
+	return ""
+}
