@@ -2,6 +2,7 @@
 package postgresparser
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -77,4 +78,73 @@ func TestParseErrors_Error_Multiple(t *testing.T) {
 	assert.Contains(t, s, "line 1:5", "expected error location 1")
 	assert.Contains(t, s, "line 2:3", "expected error location 2")
 	assert.Contains(t, s, "\n\n", "expected blank line separating error blocks")
+}
+
+// TestParseErrors_Error_CaretWidthMatchesTokenLength checks the caret spans the
+// whole offending token when its length is known.
+func TestParseErrors_Error_CaretWidthMatchesTokenLength(t *testing.T) {
+	pe := &ParseErrors{
+		SQL:    "SELECT FROM",
+		Errors: []SyntaxError{{Line: 1, Column: 7, Message: "bad", TokenLength: 4}},
+	}
+	caret := caretLineOf(t, pe.Error())
+	assert.Equal(t, "^^^^", strings.TrimLeft(caret, " "), "caret width should equal token length")
+}
+
+// TestParseErrors_Error_SingleCaretWhenTokenLengthUnknown checks a zero token
+// length degrades to a single caret rather than an empty one.
+func TestParseErrors_Error_SingleCaretWhenTokenLengthUnknown(t *testing.T) {
+	pe := &ParseErrors{
+		SQL:    "SELECT FROM",
+		Errors: []SyntaxError{{Line: 1, Column: 7, Message: "bad"}},
+	}
+	caret := caretLineOf(t, pe.Error())
+	assert.Equal(t, "^", strings.TrimLeft(caret, " "), "expected a single caret when token length is unknown")
+}
+
+// TestParseErrors_Error_LineOutOfRange checks errors pointing past the last
+// source line fall back to header + message with no caret.
+func TestParseErrors_Error_LineOutOfRange(t *testing.T) {
+	pe := &ParseErrors{
+		SQL:    "SELECT 1",
+		Errors: []SyntaxError{{Line: 5, Column: 0, Message: "unexpected EOF"}},
+	}
+	s := pe.Error()
+	assert.Contains(t, s, "parse error at line 5:0", "expected the header for the reported position")
+	assert.Contains(t, s, "unexpected EOF", "expected the underlying message")
+	assert.NotContains(t, s, "^", "expected no caret when the source line is unavailable")
+}
+
+// TestParseErrors_Error_SelectsReportedSourceLine checks the rendered block
+// quotes the line named by the error, not earlier lines.
+func TestParseErrors_Error_SelectsReportedSourceLine(t *testing.T) {
+	pe := &ParseErrors{
+		SQL:    "SELECT a\nFROM t\nWHERE",
+		Errors: []SyntaxError{{Line: 3, Column: 0, Message: "incomplete", TokenLength: 5}},
+	}
+	s := pe.Error()
+	assert.Contains(t, s, "3 | WHERE", "expected the line-3 source in the gutter")
+	assert.NotContains(t, s, "SELECT a", "expected unrelated source lines to be omitted")
+}
+
+// TestParseErrors_Error_PreservesTabIndent checks the caret indent keeps tabs so
+// alignment holds under tab-indented input.
+func TestParseErrors_Error_PreservesTabIndent(t *testing.T) {
+	pe := &ParseErrors{
+		SQL:    "SELECT\n\tFROM x",
+		Errors: []SyntaxError{{Line: 2, Column: 1, Message: "bad", TokenLength: 4}},
+	}
+	caret := caretLineOf(t, pe.Error())
+	assert.Contains(t, caret, "\t", "caret indent should preserve the source tab")
+}
+
+func caretLineOf(t *testing.T, rendered string) string {
+	t.Helper()
+	for _, line := range strings.Split(rendered, "\n") {
+		if strings.Contains(line, "^") {
+			return line
+		}
+	}
+	t.Fatalf("no caret line in rendered error:\n%s", rendered)
+	return ""
 }
