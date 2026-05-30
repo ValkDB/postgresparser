@@ -1407,3 +1407,116 @@ func TestExtractWhereConditions_Functions(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractWhereConditions_JSONBExtractionForms exercises JSONB extraction
+// across simple identifiers, quoted identifiers, path operators with
+// brace-style paths, and casted extraction (including schema-qualified casts).
+func TestExtractWhereConditions_JSONBExtractionForms(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		wantTable  string
+		wantColumn string
+		wantKey    string
+		wantCast   string
+		wantValue  string
+	}{
+		{
+			name:       "simple unquoted identifier",
+			query:      `SELECT * FROM orders WHERE order_details->>'shipping_method' = 'express'`,
+			wantTable:  "orders",
+			wantColumn: "order_details",
+			wantKey:    "shipping_method",
+			wantValue:  "express",
+		},
+		{
+			name:       "alias-qualified unquoted identifier",
+			query:      `SELECT * FROM orders o WHERE o.order_details->>'shipping_method' = 'express'`,
+			wantTable:  "orders",
+			wantColumn: "order_details",
+			wantKey:    "shipping_method",
+			wantValue:  "express",
+		},
+		{
+			name:       "quoted column without alias",
+			query:      `SELECT * FROM users WHERE "metadata"->>'plan' = 'pro'`,
+			wantTable:  "users",
+			wantColumn: "metadata",
+			wantKey:    "plan",
+			wantValue:  "pro",
+		},
+		{
+			name:       "alias plus quoted column",
+			query:      `SELECT * FROM "users" u WHERE u."metadata"->>'plan' = 'pro'`,
+			wantTable:  "users",
+			wantColumn: "metadata",
+			wantKey:    "plan",
+			wantValue:  "pro",
+		},
+		{
+			name:       "fully quoted alias and column",
+			query:      `SELECT * FROM "users" "u" WHERE "u"."metadata"->>'plan' = 'pro'`,
+			wantTable:  "users",
+			wantColumn: "metadata",
+			wantKey:    "plan",
+			wantValue:  "pro",
+		},
+		{
+			name:       "path operator with brace-style path",
+			query:      `SELECT * FROM events WHERE payload #>> '{user,email}' = 'a@example.com'`,
+			wantTable:  "events",
+			wantColumn: "payload",
+			wantKey:    "{user,email}",
+			wantValue:  "a@example.com",
+		},
+		{
+			name:       "casted extraction with simple type",
+			query:      `SELECT * FROM events WHERE (payload->>'score')::numeric >= 90`,
+			wantTable:  "events",
+			wantColumn: "payload",
+			wantKey:    "score",
+			wantCast:   "numeric",
+			wantValue:  "90",
+		},
+		{
+			name:       "casted extraction with schema-qualified type",
+			query:      `SELECT * FROM events WHERE (payload->>'v')::pg_catalog.text = 'x'`,
+			wantTable:  "events",
+			wantColumn: "payload",
+			wantKey:    "v",
+			wantCast:   "pg_catalog.text",
+			wantValue:  "x",
+		},
+		{
+			name:       "casted extraction with quoted column",
+			query:      `SELECT * FROM events e WHERE (e."payload"->>'score')::numeric >= 90`,
+			wantTable:  "events",
+			wantColumn: "payload",
+			wantKey:    "score",
+			wantCast:   "numeric",
+			wantValue:  "90",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conditions, err := ExtractWhereConditions(tt.query)
+			require.NoError(t, err)
+
+			var jsonbCond *WhereCondition
+			for i := range conditions {
+				if conditions[i].IsJSONB {
+					jsonbCond = &conditions[i]
+					break
+				}
+			}
+			require.NotNil(t, jsonbCond, "expected a JSONB condition")
+
+			assert.Equal(t, tt.wantTable, jsonbCond.Table, "table")
+			assert.Equal(t, tt.wantColumn, jsonbCond.Column, "column")
+			assert.Equal(t, tt.wantKey, jsonbCond.JSONBKey, "JSONBKey")
+			assert.Equal(t, tt.wantCast, jsonbCond.JSONBCast, "JSONBCast")
+			assert.Equal(t, tt.wantValue, jsonbCond.Value, "value")
+		})
+	}
+}

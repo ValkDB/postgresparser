@@ -13,11 +13,27 @@ import (
 
 var parameterRegex = regexp.MustCompile(`^\$\d+$|^\?$`)
 
-// jsonbExtractTextPattern matches JSONB extraction patterns like: column->>'key' = 'value'
-var jsonbExtractTextPattern = regexp.MustCompile(`(?i)(?:(\w+)\.)?(\w+)\s*(?:->>|->|#>>|#>)\s*'([^']+)'`)
+// jsonbIdentRE matches a quoted (double-quote) or unquoted SQL identifier,
+// so the JSONB patterns recognize forms like `"metadata"` and `u."metadata"`.
+const jsonbIdentRE = `(?:"(?:[^"]|"")+"|\w+)`
 
-// jsonbCastedPattern matches casted JSONB expressions like (metadata->>'score')::int
-var jsonbCastedPattern = regexp.MustCompile(`(?i)\(\s*(?:(\w+)\.)?(\w+)\s*(?:->>|->|#>>|#>)\s*'([^']+)'\s*\)::(\w+)`)
+// jsonbCastTypeRE matches a cast type such as int, pg_catalog.text,
+// numeric(10,2), or int[]. Schema-qualified, length-qualified, and array
+// suffixes are all optional.
+const jsonbCastTypeRE = `\w+(?:\.\w+)?(?:\[\])?(?:\([^)]*\))?`
+
+// jsonbExtractTextPattern matches JSONB extraction patterns like
+// column->>'key', t.column->>'key', and "t"."column"->>'key'.
+var jsonbExtractTextPattern = regexp.MustCompile(
+	`(?i)(?:(` + jsonbIdentRE + `)\.)?(` + jsonbIdentRE + `)\s*(?:->>|->|#>>|#>)\s*'([^']+)'`,
+)
+
+// jsonbCastedPattern matches casted JSONB expressions like
+// (metadata->>'score')::int, (t."metadata"->>'k')::numeric, and
+// (payload->>'v')::pg_catalog.text.
+var jsonbCastedPattern = regexp.MustCompile(
+	`(?i)\(\s*(?:(` + jsonbIdentRE + `)\.)?(` + jsonbIdentRE + `)\s*(?:->>|->|#>>|#>)\s*'([^']+)'\s*\)::(` + jsonbCastTypeRE + `)`,
+)
 
 // betweenAndRegex splits BETWEEN range values on the AND keyword.
 var betweenAndRegex = regexp.MustCompile(`(?i)\s+AND\s+`)
@@ -89,17 +105,17 @@ func extractJSONBInfo(context string) *jsonbInfo {
 	// Try casted pattern first (more specific)
 	if matches := jsonbCastedPattern.FindStringSubmatch(context); len(matches) == 5 {
 		return &jsonbInfo{
-			column:   matches[2], // Column name (group 1 is alias)
-			key:      matches[3], // Extracted key
-			castType: matches[4], // Cast type
+			column:   ident.TrimQuotes(matches[2]),
+			key:      matches[3],
+			castType: matches[4],
 		}
 	}
 
 	// Try standard extraction pattern
 	if matches := jsonbExtractTextPattern.FindStringSubmatch(context); len(matches) == 4 {
 		return &jsonbInfo{
-			column: matches[2], // Column name (group 1 is alias)
-			key:    matches[3], // Extracted key
+			column: ident.TrimQuotes(matches[2]),
+			key:    matches[3],
 		}
 	}
 
