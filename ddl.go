@@ -801,18 +801,43 @@ func populateCreateIndex(result *ParsedQuery, ctx gen.IIndexstmtContext, tokens 
 		}
 	}
 
+	var includeColumns []string
+	if inc := ctx.Include_(); inc != nil {
+		if params := inc.Index_including_params(); params != nil {
+			for _, elem := range params.AllIndex_elem() {
+				prc, ok := elem.(antlr.ParserRuleContext)
+				if !ok {
+					continue
+				}
+				name := strings.TrimSpace(ctxText(tokens, prc))
+				if name != "" {
+					includeColumns = append(includeColumns, name)
+				}
+			}
+		}
+	}
+
+	predicate := ""
+	if wc := ctx.Where_clause(); wc != nil {
+		if expr := wc.A_expr(); expr != nil {
+			predicate = strings.TrimSpace(ctxText(tokens, expr))
+		}
+	}
+
 	indexSchema, indexName := splitQualifiedName(indexRaw)
 	if indexSchema == "" {
 		indexSchema = tableSchema
 	}
 
 	action := DDLAction{
-		Type:       DDLCreateIndex,
-		ObjectName: indexName,
-		Schema:     indexSchema,
-		Columns:    columns,
-		Flags:      flags,
-		IndexType:  indexType,
+		Type:           DDLCreateIndex,
+		ObjectName:     indexName,
+		Schema:         indexSchema,
+		Columns:        columns,
+		Flags:          flags,
+		IndexType:      indexType,
+		IncludeColumns: includeColumns,
+		Predicate:      predicate,
 	}
 	result.DDLActions = append(result.DDLActions, action)
 	return nil

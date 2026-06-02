@@ -285,8 +285,14 @@ type SQLDDLAction struct {
 	Constraints   *SQLDDLConstraints
 	Flags         []string
 	IndexType     string
-	Target        string
-	Comment       string
+	// IncludeColumns lists non-key columns from CREATE INDEX ... INCLUDE (...).
+	IncludeColumns []string
+	// Predicate is the partial-index expression from CREATE INDEX ... WHERE ...
+	// (the bare expression, without the leading WHERE keyword). Empty when the
+	// index is not partial.
+	Predicate string
+	Target    string
+	Comment   string
 }
 
 // SQLParseWarningCode identifies non-fatal parser notices in analysis batch results.

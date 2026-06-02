@@ -198,8 +198,14 @@ type DDLAction struct {
 	Constraints   *DDLConstraints // PK/FK/UNIQUE constraint metadata (CREATE TABLE, ALTER TABLE ADD CONSTRAINT)
 	Flags         []string        // IF_EXISTS, CONCURRENTLY, CASCADE, etc.
 	IndexType     string          // btree, gin, gist, hash (CREATE INDEX only)
-	Target        string          // Generic fully-qualified target path for comment-like actions.
-	Comment       string          // Comment text for COMMENT ON statements.
+	// IncludeColumns lists non-key columns from CREATE INDEX ... INCLUDE (...).
+	IncludeColumns []string
+	// Predicate is the partial-index expression from CREATE INDEX ... WHERE ...
+	// (the bare expression, without the leading WHERE keyword). Empty when the
+	// index is not partial.
+	Predicate string
+	Target    string // Generic fully-qualified target path for comment-like actions.
+	Comment   string // Comment text for COMMENT ON statements.
 }
 
 // SubqueryRef records metadata for subqueries discovered in FROM or set operations.

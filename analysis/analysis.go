@@ -463,17 +463,19 @@ func convertDDLActions(actions []postgresparser.DDLAction) []SQLDDLAction {
 	out := make([]SQLDDLAction, 0, len(actions))
 	for _, a := range actions {
 		out = append(out, SQLDDLAction{
-			Type:          string(a.Type),
-			ObjectName:    a.ObjectName,
-			ObjectType:    a.ObjectType,
-			Schema:        a.Schema,
-			Columns:       append([]string(nil), a.Columns...),
-			ColumnDetails: convertDDLColumns(a.ColumnDetails),
-			Constraints:   convertDDLConstraints(a.Constraints),
-			Flags:         append([]string(nil), a.Flags...),
-			IndexType:     a.IndexType,
-			Target:        a.Target,
-			Comment:       a.Comment,
+			Type:           string(a.Type),
+			ObjectName:     a.ObjectName,
+			ObjectType:     a.ObjectType,
+			Schema:         a.Schema,
+			Columns:        append([]string(nil), a.Columns...),
+			ColumnDetails:  convertDDLColumns(a.ColumnDetails),
+			Constraints:    convertDDLConstraints(a.Constraints),
+			Flags:          append([]string(nil), a.Flags...),
+			IndexType:      a.IndexType,
+			IncludeColumns: append([]string(nil), a.IncludeColumns...),
+			Predicate:      a.Predicate,
+			Target:         a.Target,
+			Comment:        a.Comment,
 		})
 	}
 	return out

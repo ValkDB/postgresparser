@@ -302,6 +302,56 @@ func TestIR_DDL_CreateIndex_OnlyRelationRawPreserved(t *testing.T) {
 	assert.Equal(t, "ONLY public.users", ir.Tables[0].Raw, "table raw mismatch")
 }
 
+// TestIR_DDL_CreateIndex_IncludeAndPredicate verifies that INCLUDE columns and
+// the partial-index WHERE predicate are captured on the CREATE_INDEX action.
+func TestIR_DDL_CreateIndex_IncludeAndPredicate(t *testing.T) {
+	tests := []struct {
+		name          string
+		sql           string
+		wantInclude   []string
+		wantPredicate string
+	}{
+		{
+			name: "include columns and partial predicate",
+			sql: `CREATE INDEX idx_users_active_email
+ON users (email)
+INCLUDE (last_login_at)
+WHERE active = true`,
+			wantInclude:   []string{"last_login_at"},
+			wantPredicate: "active = true",
+		},
+		{
+			name:          "multiple include columns, no predicate",
+			sql:           `CREATE INDEX idx_users_email ON users (email) INCLUDE (name, last_login_at)`,
+			wantInclude:   []string{"name", "last_login_at"},
+			wantPredicate: "",
+		},
+		{
+			name:          "partial predicate only",
+			sql:           `CREATE INDEX idx_users_partial ON users (email) WHERE created_at > '2024-01-01'`,
+			wantInclude:   nil,
+			wantPredicate: "created_at > '2024-01-01'",
+		},
+		{
+			name:          "plain index leaves both fields empty",
+			sql:           `CREATE INDEX idx_users_email ON users (email)`,
+			wantInclude:   nil,
+			wantPredicate: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ir := parseAssertNoError(t, tc.sql)
+			require.Len(t, ir.DDLActions, 1, "action count mismatch")
+			act := ir.DDLActions[0]
+			assert.Equal(t, DDLCreateIndex, act.Type, "expected CREATE_INDEX")
+			assert.Equal(t, tc.wantInclude, act.IncludeColumns, "IncludeColumns mismatch")
+			assert.Equal(t, tc.wantPredicate, act.Predicate, "Predicate mismatch")
+		})
+	}
+}
+
 func TestIR_DDL_CreateTable(t *testing.T) {
 	sql := `CREATE TABLE public.users (
     id integer NOT NULL,

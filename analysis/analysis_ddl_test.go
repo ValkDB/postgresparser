@@ -343,6 +343,30 @@ func TestAnalyzeSQL_DDL_CreateIndex(t *testing.T) {
 	}
 }
 
+// TestAnalyzeSQL_DDL_CreateIndex_IncludeAndPredicate checks the analysis DTO
+// mirrors INCLUDE columns and the partial-index WHERE predicate.
+func TestAnalyzeSQL_DDL_CreateIndex_IncludeAndPredicate(t *testing.T) {
+	sql := `CREATE INDEX idx_users_active_email
+ON users (email)
+INCLUDE (last_login_at)
+WHERE active = true`
+
+	res, err := AnalyzeSQL(sql)
+	if err != nil {
+		t.Fatalf("AnalyzeSQL failed: %v", err)
+	}
+	if len(res.DDLActions) != 1 {
+		t.Fatalf("expected 1 DDL action, got %d", len(res.DDLActions))
+	}
+
+	act := res.DDLActions[0]
+	if act.Type != "CREATE_INDEX" {
+		t.Fatalf("expected CREATE_INDEX, got %s", act.Type)
+	}
+	require.Equal(t, []string{"last_login_at"}, act.IncludeColumns, "IncludeColumns mismatch")
+	require.Equal(t, "active = true", act.Predicate, "Predicate mismatch")
+}
+
 func TestAnalyzeSQL_DDL_CreateIndex_QualifiedIndexNameNormalization(t *testing.T) {
 	res, err := AnalyzeSQL("CREATE INDEX analytics.idx_users_email ON public.users (email)")
 	if err != nil {
