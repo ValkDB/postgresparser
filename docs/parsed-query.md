@@ -140,6 +140,8 @@ Common DDL action fields:
 - `Columns`: Column names or indexed expressions relevant to the action.
 - `Flags`: Modifiers like `IF_EXISTS`, `IF_NOT_EXISTS`, `CASCADE`, `CONCURRENTLY`, etc.
 - `IndexType`: Index method for `CREATE_INDEX` (for example `btree`, `gin`).
+- `IncludeColumns`: Non-key columns from `CREATE INDEX ... INCLUDE (...)`. Empty for indexes without an `INCLUDE` clause.
+- `Predicate`: Partial-index expression from `CREATE INDEX ... WHERE ...`, captured as text without the leading `WHERE` keyword. Empty for non-partial indexes.
 - `ColumnDetails`: Column metadata for `CREATE_TABLE` actions.
 - `Constraints`: Optional `*DDLConstraints` grouping PK/FK/UNIQUE/CHECK metadata (`CREATE_TABLE`, `ALTER_TABLE ADD CONSTRAINT`).
 - `Target`: Generic fully-qualified target path for comment-like actions (for example `public.users.email`).

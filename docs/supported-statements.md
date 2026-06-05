@@ -23,7 +23,7 @@ These statements are walked via ANTLR visitors and produce rich IR metadata in `
 | `CREATE TABLE` | `DDL` | `Tables`, `DDLActions` (with `ColumnDetails`, `Constraints`: PK/FK/UNIQUE/CHECK) |
 | `ALTER TABLE` | `DDL` | `Tables`, `DDLActions` (including `Constraints` on `ADD CONSTRAINT`: PK/FK/UNIQUE/CHECK) |
 | `DROP TABLE` / `DROP INDEX` | `DDL` | `DDLActions` (with `Flags`) |
-| `CREATE INDEX` | `DDL` | `DDLActions` (with `IndexType`) |
+| `CREATE INDEX` | `DDL` | `DDLActions` (with `IndexType`, `IncludeColumns`, `Predicate` for partial-index `WHERE`) |
 | `TRUNCATE` | `DDL` | `Tables`, `DDLActions` |
 | `COMMENT ON` | `DDL` | `DDLActions` (with `Type=COMMENT`, `ObjectType`, `ObjectName`, `Schema`, `Target`, `Comment`) |
 
