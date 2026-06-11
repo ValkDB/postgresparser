@@ -1038,6 +1038,98 @@ func TestExtractWhereConditions_TableResolution(t *testing.T) {
 	}
 }
 
+// TestExtractWhereConditionsWithSchema verifies schema-based table resolution
+// for unqualified columns in multi-table queries.
+func TestExtractWhereConditionsWithSchema(t *testing.T) {
+	schemaMap := map[string][]ColumnSchema{
+		"orders": {
+			{Name: "id", PGType: "integer", IsPrimaryKey: true},
+			{Name: "customer_id", PGType: "integer"},
+			{Name: "total", PGType: "numeric"},
+			{Name: "created_at", PGType: "timestamptz"},
+		},
+		"customers": {
+			{Name: "id", PGType: "integer", IsPrimaryKey: true},
+			{Name: "country", PGType: "text"},
+			{Name: "created_at", PGType: "timestamptz"},
+		},
+	}
+
+	tests := []struct {
+		name           string
+		query          string
+		expectedTable  string
+		expectedColumn string
+	}{
+		{
+			// Exact case from issue #75.
+			name: "unqualified column resolved via schema",
+			query: `SELECT *
+FROM orders o
+JOIN customers c ON o.customer_id = c.id
+WHERE total > 100`,
+			expectedTable:  "orders",
+			expectedColumn: "total",
+		},
+		{
+			name:           "column in both tables stays unresolved",
+			query:          "SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id WHERE created_at > '2026-01-01'",
+			expectedTable:  "",
+			expectedColumn: "created_at",
+		},
+		{
+			name:           "column in neither table stays unresolved",
+			query:          "SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id WHERE missing_col = 1",
+			expectedTable:  "",
+			expectedColumn: "missing_col",
+		},
+		{
+			name:           "qualified column keeps alias resolution",
+			query:          "SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.country = 'US'",
+			expectedTable:  "customers",
+			expectedColumn: "country",
+		},
+		{
+			name:           "single-table fallback still applies without schema entry",
+			query:          "SELECT * FROM payments WHERE amount > 5",
+			expectedTable:  "payments",
+			expectedColumn: "amount",
+		},
+		{
+			name:           "self-join resolves to the shared table",
+			query:          "SELECT * FROM orders a JOIN orders b ON a.id = b.id WHERE total > 100",
+			expectedTable:  "orders",
+			expectedColumn: "total",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conditions, err := ExtractWhereConditionsWithSchema(tt.query, schemaMap)
+
+			require.NoError(t, err)
+			require.Len(t, conditions, 1)
+			assert.Equal(t, tt.expectedTable, conditions[0].Table)
+			assert.Equal(t, tt.expectedColumn, conditions[0].Column)
+		})
+	}
+}
+
+// TestExtractWhereConditionsWithSchema_NilSchema verifies a nil schemaMap
+// behaves exactly like ExtractWhereConditions.
+func TestExtractWhereConditionsWithSchema_NilSchema(t *testing.T) {
+	query := "SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id WHERE total > 100"
+
+	withSchema, err := ExtractWhereConditionsWithSchema(query, nil)
+	require.NoError(t, err)
+	plain, err := ExtractWhereConditions(query)
+	require.NoError(t, err)
+
+	assert.Equal(t, plain, withSchema)
+	require.Len(t, withSchema, 1)
+	assert.Empty(t, withSchema[0].Table)
+}
+
 // TestBuildWhereAliasMap verifies WHERE alias-map resolution behavior.
 func TestBuildWhereAliasMap(t *testing.T) {
 	tables := []postgresparser.TableRef{

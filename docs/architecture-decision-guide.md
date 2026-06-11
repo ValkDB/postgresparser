@@ -103,7 +103,7 @@ Not in core IR. Here's why:
 3. This logic is policy. It evolves independently from parse-tree extraction.
 4. Keeping it out of core avoids penalizing callers who only need IR.
 
-Same logic applies to `ExtractJoinRelationshipsWithSchema` and `ExtractQueryAnalysisWithSchema` — they accept `map[string][]ColumnSchema` (external metadata the grammar can't provide). Core's contract is "SQL text in, IR out, no side inputs."
+Same logic applies to `ExtractWhereConditionsWithSchema`, `ExtractJoinRelationshipsWithSchema`, and `ExtractQueryAnalysisWithSchema` — they accept `map[string][]ColumnSchema` (external metadata the grammar can't provide). Core's contract is "SQL text in, IR out, no side inputs."
 
 ## Anti-Patterns
 

@@ -242,6 +242,29 @@ func TestExtractQueryAnalysisWithSchema(t *testing.T) {
 	}
 }
 
+// TestExtractQueryAnalysisWithSchema_UnqualifiedWhereColumn verifies the combined
+// extractor resolves unqualified WHERE columns via the schema map.
+func TestExtractQueryAnalysisWithSchema_UnqualifiedWhereColumn(t *testing.T) {
+	query := "SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id WHERE total > 100"
+
+	schemaMap := map[string][]ColumnSchema{
+		"customers": {
+			{Name: "id", PGType: "bigint", IsPrimaryKey: true},
+		},
+		"orders": {
+			{Name: "id", PGType: "bigint", IsPrimaryKey: true},
+			{Name: "customer_id", PGType: "bigint"},
+			{Name: "total", PGType: "numeric"},
+		},
+	}
+
+	result, err := ExtractQueryAnalysisWithSchema(query, schemaMap)
+	require.NoError(t, err)
+	require.Len(t, result.WhereConditions, 1)
+	assert.Equal(t, "orders", result.WhereConditions[0].Table)
+	assert.Equal(t, "total", result.WhereConditions[0].Column)
+}
+
 // =============================================================================
 // isColumnPrimaryKey Tests
 // =============================================================================
