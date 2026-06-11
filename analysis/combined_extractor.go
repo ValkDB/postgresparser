@@ -5,8 +5,10 @@ package analysis
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/valkdb/postgresparser"
+	"github.com/valkdb/postgresparser/internal/ident"
 )
 
 // QueryAnalysisResult holds the combined results of query analysis.
@@ -47,7 +49,7 @@ func ExtractQueryAnalysis(query string) (*QueryAnalysisResult, error) {
 	}
 
 	// Extract WHERE conditions from the parsed query
-	result.WhereConditions = extractWhereConditionsFromParsed(pq)
+	result.WhereConditions = extractWhereConditionsFromParsed(pq, nil)
 
 	// JoinRelationships is nil: FK detection requires schema metadata.
 	// Use ExtractQueryAnalysisWithSchema for FK relationship extraction.
@@ -55,9 +57,46 @@ func ExtractQueryAnalysis(query string) (*QueryAnalysisResult, error) {
 	return result, nil
 }
 
+// resolveColumnTableFromSchema resolves an unqualified column to its owning table
+// by looking it up across the query's base tables in schemaMap. Returns the table
+// name when exactly one base table contains the column, "" otherwise.
+func resolveColumnTableFromSchema(column string, tables []postgresparser.TableRef, schemaMap map[string][]ColumnSchema) string {
+	if len(schemaMap) == 0 {
+		return ""
+	}
+	col := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(column)))
+	if col == "" {
+		return ""
+	}
+
+	match := ""
+	for _, table := range tables {
+		if table.Type != postgresparser.TableTypeBase {
+			continue
+		}
+		tableName := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(table.Name)))
+		if tableName == "" || tableName == match {
+			continue
+		}
+		for _, cs := range schemaMap[tableName] {
+			if strings.ToLower(cs.Name) != col {
+				continue
+			}
+			if match != "" {
+				// Ambiguous: the column exists in more than one of the query's tables.
+				return ""
+			}
+			match = tableName
+			break
+		}
+	}
+	return match
+}
+
 // extractWhereConditionsFromParsed extracts WHERE conditions from an already-parsed query.
 // This is the internal implementation shared by both ExtractWhereConditions and ExtractQueryAnalysis.
-func extractWhereConditionsFromParsed(pq *postgresparser.ParsedQuery) []WhereCondition {
+// A non-nil schemaMap resolves unqualified columns in multi-table queries to their owning table.
+func extractWhereConditionsFromParsed(pq *postgresparser.ParsedQuery, schemaMap map[string][]ColumnSchema) []WhereCondition {
 	var conditions []WhereCondition
 	// WHERE extraction uses its own alias map that includes base tables, CTEs,
 	// and subqueries so Table resolution stays consistent across relation types.
@@ -82,9 +121,13 @@ func extractWhereConditionsFromParsed(pq *postgresparser.ParsedQuery) []WhereCon
 
 		// Resolve table name from alias, or use first table only for single-table queries.
 		tableName := resolveAlias(usage.TableAlias, aliasMap)
-		if tableName == "" && len(pq.Tables) == 1 {
-			// No alias and no resolution - default to first table only for single-table queries
-			tableName = pq.Tables[0].Name
+		if tableName == "" {
+			if len(pq.Tables) == 1 {
+				// No alias and no resolution - default to first table only for single-table queries
+				tableName = pq.Tables[0].Name
+			} else {
+				tableName = resolveColumnTableFromSchema(usage.Column, pq.Tables, schemaMap)
+			}
 		}
 
 		condition := WhereCondition{
@@ -123,7 +166,8 @@ func extractWhereConditionsFromParsed(pq *postgresparser.ParsedQuery) []WhereCon
 }
 
 // ExtractQueryAnalysisWithSchema parses a query and extracts analysis results,
-// using schema metadata to improve FK relationship inference accuracy.
+// using schema metadata for FK relationship inference and for resolving
+// unqualified WHERE columns to their owning table.
 //
 // Schema-aware extraction uses the IsPrimaryKey field from
 // schema metadata instead of heuristic name-based detection.
@@ -141,8 +185,8 @@ func ExtractQueryAnalysisWithSchema(query string, schemaMap map[string][]ColumnS
 		ParsedQuery: pq,
 	}
 
-	// Extract WHERE conditions (schema-independent)
-	result.WhereConditions = extractWhereConditionsFromParsed(pq)
+	// Extract WHERE conditions, resolving unqualified columns via schema metadata
+	result.WhereConditions = extractWhereConditionsFromParsed(pq, schemaMap)
 
 	// Extract JOIN relationships with schema awareness
 	result.JoinRelationships = extractJoinRelationshipsWithSchema(pq, schemaMap)

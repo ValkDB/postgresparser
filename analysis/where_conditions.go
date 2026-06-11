@@ -59,12 +59,26 @@ var jsonbOperators = map[string]bool{
 // Returns a list of conditions with table, column, operator, and value information.
 // Supports all standard SQL operators: =, !=, <>, >, <, >=, <=, BETWEEN, IN, LIKE, IS NULL, etc.
 // Also supports JSONB operators (@>, ?, ?|, ?&) and extraction patterns.
+//
+// In multi-table queries, unqualified columns leave WhereCondition.Table empty.
+// Use ExtractWhereConditionsWithSchema to resolve them via schema metadata.
 func ExtractWhereConditions(query string) ([]WhereCondition, error) {
+	return ExtractWhereConditionsWithSchema(query, nil)
+}
+
+// ExtractWhereConditionsWithSchema is like ExtractWhereConditions, but resolves
+// the table of unqualified columns in multi-table queries via schema metadata:
+// if exactly one of the query's base tables contains the column, that table is
+// used; zero or multiple matches leave Table empty.
+// The schemaMap is keyed by lowercase table name (same shape as
+// ExtractJoinRelationshipsWithSchema). A nil schemaMap behaves exactly like
+// ExtractWhereConditions.
+func ExtractWhereConditionsWithSchema(query string, schemaMap map[string][]ColumnSchema) ([]WhereCondition, error) {
 	pq, err := postgresparser.ParseSQL(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse query: %w", err)
 	}
-	return extractWhereConditionsFromParsed(pq), nil
+	return extractWhereConditionsFromParsed(pq, schemaMap), nil
 }
 
 // jsonbInfo holds extracted JSONB operator information.
