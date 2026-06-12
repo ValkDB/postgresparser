@@ -412,29 +412,46 @@ func normalizeReturning(items []string) []string {
 	return out
 }
 
-// splitCommasRespectingParens splits a string on commas that are not inside
-// parentheses or single-quoted string literals. This prevents incorrect splitting
-// of function arguments like "func(a, b)" into ["func(a", "b)"] and also handles
-// string literals like "concat('a,b', name)" correctly.
+// splitCommasRespectingParens splits a string on top-level commas only,
+// skipping commas inside parentheses, square brackets, single-quoted string
+// literals, and double-quoted identifiers. This prevents incorrect splitting
+// of values like "func(a, b)", "ARRAY['a,b', 'c']", or "'Doe, Jane'".
+// A SQL-escaped quote (two adjacent single-quote characters) toggles the
+// in-string state twice, so it cannot enclose a comma and needs no special
+// handling.
 func splitCommasRespectingParens(s string) []string {
 	var parts []string
-	depth := 0
-	inQuote := false
+	parenDepth, bracketDepth := 0, 0
+	inSingle, inDouble := false, false
 	start := 0
 	for i, ch := range s {
 		switch ch {
 		case '\'':
-			inQuote = !inQuote
+			if !inDouble {
+				inSingle = !inSingle
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
 		case '(':
-			if !inQuote {
-				depth++
+			if !inSingle && !inDouble {
+				parenDepth++
 			}
 		case ')':
-			if !inQuote && depth > 0 {
-				depth--
+			if !inSingle && !inDouble && parenDepth > 0 {
+				parenDepth--
+			}
+		case '[':
+			if !inSingle && !inDouble {
+				bracketDepth++
+			}
+		case ']':
+			if !inSingle && !inDouble && bracketDepth > 0 {
+				bracketDepth--
 			}
 		case ',':
-			if !inQuote && depth == 0 {
+			if !inSingle && !inDouble && parenDepth == 0 && bracketDepth == 0 {
 				parts = append(parts, s[start:i])
 				start = i + 1
 			}

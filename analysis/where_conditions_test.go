@@ -1177,12 +1177,77 @@ func TestExtractInValues(t *testing.T) {
 			input:    "()",
 			expected: []string{},
 		},
+		{
+			name:     "quoted values containing commas",
+			input:    "('Doe, Jane', 'Smith, John')",
+			expected: []string{"Doe, Jane", "Smith, John"},
+		},
+		{
+			name:     "nested function calls",
+			input:    "(coalesce($1, 0), coalesce($2, 0))",
+			expected: []string{"coalesce($1, 0)", "coalesce($2, 0)"},
+		},
+		{
+			name:     "array values with internal commas",
+			input:    "(ARRAY['a,b', 'c'], ARRAY[1, 2])",
+			expected: []string{"ARRAY['a,b', 'c']", "ARRAY[1, 2]"},
+		},
+		{
+			name:     "double-quoted identifier containing comma",
+			input:    `("weird,col", 'x')`,
+			expected: []string{"weird,col", "x"},
+		},
+		{
+			name:     "escaped quote inside string",
+			input:    "('it''s, fine', 'b')",
+			expected: []string{"it''s, fine", "b"},
+		},
+		{
+			name:     "row constructor values",
+			input:    "((1, 2), (3, 4))",
+			expected: []string{"(1, 2)", "(3, 4)"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := extractInValues(tt.input)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestExtractWhereConditions_InValuesWithCommas verifies IN lists whose values
+// contain commas are not split at nested commas (issue #69 acceptance cases).
+func TestExtractWhereConditions_InValuesWithCommas(t *testing.T) {
+	tests := []struct {
+		name           string
+		query          string
+		expectedValues []string
+	}{
+		{
+			name:           "quoted strings with commas",
+			query:          "SELECT * FROM users WHERE name IN ('Doe, Jane', 'Smith, John')",
+			expectedValues: []string{"Doe, Jane", "Smith, John"},
+		},
+		{
+			name:           "nested function calls",
+			query:          "SELECT * FROM users WHERE id IN (coalesce($1, 0), coalesce($2, 0))",
+			expectedValues: []string{"coalesce($1, 0)", "coalesce($2, 0)"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conditions, err := ExtractWhereConditions(tt.query)
+
+			require.NoError(t, err)
+			require.Len(t, conditions, 1)
+			assert.Equal(t, "IN", conditions[0].Operator)
+
+			values, ok := conditions[0].Value.([]string)
+			require.True(t, ok, "IN value should be []string, got %T", conditions[0].Value)
+			assert.Equal(t, tt.expectedValues, values)
 		})
 	}
 }
