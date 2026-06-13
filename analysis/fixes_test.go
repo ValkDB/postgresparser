@@ -172,6 +172,18 @@ func TestNormalizeReturning_AlreadyStrippedPrefix(t *testing.T) {
 	assert.Equal(t, "created_at", result[2])
 }
 
+// TestNormalizeReturning_ArrayAndQuotedIdentifier ensures RETURNING items with
+// array subscripts and double-quoted identifiers are not split at nested commas.
+func TestNormalizeReturning_ArrayAndQuotedIdentifier(t *testing.T) {
+	items := []string{`RETURNING ARRAY[a, b], "col,name", id`}
+	result := normalizeReturning(items)
+
+	require.Len(t, result, 3)
+	assert.Equal(t, "ARRAY[a, b]", result[0])
+	assert.Equal(t, `"col,name"`, result[1])
+	assert.Equal(t, "id", result[2])
+}
+
 // TestSplitCommasRespectingParens validates paren-aware comma splitting across various patterns.
 func TestSplitCommasRespectingParens(t *testing.T) {
 	tests := []struct {
@@ -218,6 +230,51 @@ func TestSplitCommasRespectingParens(t *testing.T) {
 			name:     "escaped quote in string literal",
 			input:    "concat('it''s,here', name), id",
 			expected: []string{"concat('it''s,here', name)", " id"},
+		},
+		{
+			name:     "double-quoted identifier with comma",
+			input:    `"weird,col", id`,
+			expected: []string{`"weird,col"`, " id"},
+		},
+		{
+			name:     "square brackets with commas",
+			input:    "ARRAY['a,b', 'c'], id",
+			expected: []string{"ARRAY['a,b', 'c']", " id"},
+		},
+		{
+			name:     "nested brackets",
+			input:    "x[[1,2],[3,4]], y",
+			expected: []string{"x[[1,2],[3,4]]", " y"},
+		},
+		{
+			name:     "single quote inside double quotes does not toggle",
+			input:    `"it's", a`,
+			expected: []string{`"it's"`, " a"},
+		},
+		{
+			name:     "double quote inside single quotes does not toggle",
+			input:    `'say "a,b"', c`,
+			expected: []string{`'say "a,b"'`, " c"},
+		},
+		{
+			name:     "bracket inside string literal does not open depth",
+			input:    "'a[', b",
+			expected: []string{"'a['", " b"},
+		},
+		{
+			name:     "stray closing bracket does not underflow",
+			input:    "a], b",
+			expected: []string{"a]", " b"},
+		},
+		{
+			name:     "stray closing paren does not underflow",
+			input:    "a), b",
+			expected: []string{"a)", " b"},
+		},
+		{
+			name:     "unterminated quote swallows the rest",
+			input:    "'abc, d",
+			expected: []string{"'abc, d"},
 		},
 	}
 

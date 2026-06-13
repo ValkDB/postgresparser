@@ -256,6 +256,8 @@ func extractValueFromContext(context, column, operator string) (any, bool) {
 
 // extractInValues parses IN clause values.
 // Example: "(1, 2, 3)" -> ["1", "2", "3"]
+// Values containing commas inside quotes, nested calls, or arrays are kept
+// whole, e.g. "('Doe, Jane', lower($1))" -> ["Doe, Jane", "lower($1)"].
 func extractInValues(expr string) []string {
 	expr = strings.TrimSpace(expr)
 
@@ -263,8 +265,8 @@ func extractInValues(expr string) []string {
 	expr = strings.TrimPrefix(expr, "(")
 	expr = strings.TrimSuffix(expr, ")")
 
-	// Split by comma
-	parts := strings.Split(expr, ",")
+	// Split on top-level commas only
+	parts := splitCommasRespectingParens(expr)
 	values := make([]string, 0, len(parts))
 
 	for _, part := range parts {
