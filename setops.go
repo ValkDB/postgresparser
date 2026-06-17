@@ -295,7 +295,7 @@ func extractTablesAndUsageForPrimary(primary gen.ISimple_select_pramaryContext, 
 	if primary.Select_with_parens() != nil {
 		// Build nested subquery analysis without flattening inner column usage
 		// into the parent query scope.
-		if subRef, err := buildSubqueryRef("", primary.Select_with_parens(), tokens); err == nil && subRef != nil {
+		if subRef, err := buildSubqueryRef("", "SETOP", primary.Select_with_parens(), tokens); err == nil && subRef != nil {
 			tmp.Subqueries = append(tmp.Subqueries, *subRef)
 			tmp.Tables = append(tmp.Tables, subRef.Query.Tables...)
 		}
@@ -304,7 +304,8 @@ func extractTablesAndUsageForPrimary(primary gen.ISimple_select_pramaryContext, 
 }
 
 // buildSubqueryRef parses a parenthesised subquery into nested IR.
-func buildSubqueryRef(alias string, selectWithParens gen.ISelect_with_parensContext, tokens antlr.TokenStream) (*SubqueryRef, error) {
+// sourceClause records the clause the subquery was found in (see SubqueryRef.SourceClause).
+func buildSubqueryRef(alias, sourceClause string, selectWithParens gen.ISelect_with_parensContext, tokens antlr.TokenStream) (*SubqueryRef, error) {
 	if selectWithParens == nil {
 		return nil, nil
 	}
@@ -327,8 +328,9 @@ func buildSubqueryRef(alias string, selectWithParens gen.ISelect_with_parensCont
 	}
 
 	return &SubqueryRef{
-		Alias: alias,
-		Query: parsed,
+		Alias:        alias,
+		SourceClause: sourceClause,
+		Query:        parsed,
 	}, nil
 }
 

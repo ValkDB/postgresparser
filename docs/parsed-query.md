@@ -57,6 +57,9 @@ It is not designed for:
   - `ParsedQuery`: nested IR for the CTE body when the body is a supported preparable statement.
   - `Materialized`: materialization hint (`MATERIALIZED`, `NOT MATERIALIZED`, or empty).
 - `Subqueries`: Nested query refs discovered in the statement.
+  - `Alias`: binding name for FROM-clause derived tables (empty for expression subqueries).
+  - `SourceClause`: clause the subquery was found in (`WHERE`, `HAVING`, `SELECT`, `FROM`, or `SETOP`).
+  - `Query`: nested IR for the subquery body.
 - `JoinConditions`: Raw join condition expressions.
 - `Correlations`: Outer/inner alias correlation metadata for lateral/correlated subqueries.
 

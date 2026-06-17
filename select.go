@@ -238,7 +238,7 @@ func extractProjection(result *ParsedQuery, simple gen.ISimple_select_pramaryCon
 			if col.A_expr() != nil {
 				expr = text(tokens, col.A_expr())
 				findAndRecordUsage(result, col.A_expr(), ColumnUsageTypeProjection, tokens)
-				extractExpressionSubqueries(result, col.A_expr(), tokens)
+				extractExpressionSubqueries(result, col.A_expr(), "SELECT", tokens)
 			}
 			alias := ""
 			switch {
@@ -340,7 +340,7 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 		})
 		// Build nested subquery analysis without flattening inner column usage
 		// into the parent query scope.
-		if subRef, err := buildSubqueryRef(alias, sub, tokens); err == nil && subRef != nil {
+		if subRef, err := buildSubqueryRef(alias, "FROM", sub, tokens); err == nil && subRef != nil {
 			result.Subqueries = append(result.Subqueries, *subRef)
 			appendSetOpTables(result, nil, subRef.Query.Tables)
 		}
@@ -461,7 +461,7 @@ func extractWhereClause(result *ParsedQuery, whereCtx gen.IWhere_clauseContext, 
 		}
 		clauseText := strings.TrimSpace(ctxText(tokens, prc))
 		result.Where = append(result.Where, clauseText)
-		extractExpressionSubqueries(result, expr, tokens)
+		extractExpressionSubqueries(result, expr, "WHERE", tokens)
 		// WHERE: enable wrapper extraction.
 		findAndRecordComparisons(result, expr, ColumnUsageTypeFilter, tokens, true)
 	}
@@ -476,7 +476,7 @@ func extractHavingClause(result *ParsedQuery, havingCtx gen.IHaving_clauseContex
 		if clauseText := text(tokens, expr); clauseText != "" {
 			result.Having = append(result.Having, clauseText)
 		}
-		extractExpressionSubqueries(result, expr, tokens)
+		extractExpressionSubqueries(result, expr, "HAVING", tokens)
 		// HAVING: wrappers explicitly out of scope for v1 — pass false.
 		findAndRecordComparisons(result, expr, ColumnUsageTypeFilter, tokens, false)
 	}
