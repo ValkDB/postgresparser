@@ -64,7 +64,7 @@ func populateMerge(result *ParsedQuery, ctx gen.IMergestmtContext, tokens antlr.
 		appendSetOpTables(result, nil, []TableRef{merge.Source.Table})
 		// Build nested subquery analysis without flattening inner column usage
 		// into the MERGE parent scope.
-		if subRef, err := buildSubqueryRef(sourceAlias, swp, tokens); err == nil && subRef != nil {
+		if subRef, err := buildSubqueryRef(sourceAlias, "FROM", swp, tokens); err == nil && subRef != nil {
 			merge.Source.Subquery = subRef
 			result.Subqueries = append(result.Subqueries, *subRef)
 			appendSetOpTables(result, nil, subRef.Query.Tables)

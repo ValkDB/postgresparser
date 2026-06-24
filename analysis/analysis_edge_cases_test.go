@@ -427,6 +427,15 @@ func TestAnalyzeInsertMultipleValues(t *testing.T) {
 	assert.Contains(t, result.Returning, "name")
 }
 
+// TestAnalyzeSubquerySourceClause verifies the analysis DTO carries the
+// clause each subquery was found in.
+func TestAnalyzeSubquerySourceClause(t *testing.T) {
+	result, err := AnalyzeSQL(`SELECT * FROM t0 WHERE EXISTS (SELECT 1 FROM t1 WHERE t1.x = t0.id)`)
+	require.NoError(t, err)
+	require.Len(t, result.Subqueries, 1)
+	assert.Equal(t, "WHERE", result.Subqueries[0].SourceClause)
+}
+
 // Helper function
 func contains(slice []string, item string) bool {
 	for _, s := range slice {

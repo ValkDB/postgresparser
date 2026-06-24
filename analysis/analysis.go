@@ -248,8 +248,9 @@ func convertSubqueries(subs []postgresparser.SubqueryRef) []SQLSubquery {
 	out := make([]SQLSubquery, 0, len(subs))
 	for _, s := range subs {
 		out = append(out, SQLSubquery{
-			Alias:    s.Alias,
-			Analysis: convertParsedQuery(s.Query),
+			Alias:        s.Alias,
+			SourceClause: s.SourceClause,
+			Analysis:     convertParsedQuery(s.Query),
 		})
 	}
 	return out
@@ -382,8 +383,9 @@ func convertMerge(merge *postgresparser.MergeClause) *SQLMerge {
 	}
 	if merge.Source.Subquery != nil {
 		out.Source.Subquery = &SQLSubquery{
-			Alias:    merge.Source.Subquery.Alias,
-			Analysis: convertParsedQuery(merge.Source.Subquery.Query),
+			Alias:        merge.Source.Subquery.Alias,
+			SourceClause: merge.Source.Subquery.SourceClause,
+			Analysis:     convertParsedQuery(merge.Source.Subquery.Query),
 		}
 	}
 	return out

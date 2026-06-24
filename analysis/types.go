@@ -137,8 +137,11 @@ type SQLSetOperation struct {
 
 // SQLSubquery references a derived table; Analysis may be nil if omitted.
 type SQLSubquery struct {
-	Alias    string
-	Analysis *SQLAnalysis
+	Alias string
+	// SourceClause is the clause the subquery was found in: "WHERE", "HAVING",
+	// "SELECT", "FROM", or "SETOP". Empty when the origin was not recorded.
+	SourceClause string
+	Analysis     *SQLAnalysis
 }
 
 // SQLCTE describes a common table expression.

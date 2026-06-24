@@ -88,6 +88,53 @@ WHERE sub.total_amount < 10000`
 	assert.Contains(t, sq.Query.GroupBy[0], "user_id", "expected subquery GROUP BY user_id")
 }
 
+// TestIR_SubquerySourceClause verifies each subquery records the clause it was
+// found in.
+func TestIR_SubquerySourceClause(t *testing.T) {
+	tests := []struct {
+		name       string
+		sql        string
+		wantClause string
+	}{
+		{
+			name:       "where exists",
+			sql:        `SELECT * FROM t0 WHERE EXISTS (SELECT 1 FROM t1 WHERE t1.x = t0.id)`,
+			wantClause: "WHERE",
+		},
+		{
+			name:       "select list scalar",
+			sql:        `SELECT id, (SELECT max(v) FROM t1) AS m FROM t0`,
+			wantClause: "SELECT",
+		},
+		{
+			name:       "from derived table",
+			sql:        `SELECT * FROM (SELECT id FROM t1) sub WHERE sub.id > 1`,
+			wantClause: "FROM",
+		},
+		{
+			name:       "having",
+			sql:        `SELECT c, count(*) FROM t0 GROUP BY c HAVING count(*) > (SELECT avg(n) FROM t1)`,
+			wantClause: "HAVING",
+		},
+		{
+			name:       "set operation branch",
+			sql:        `(SELECT a FROM t0) UNION (SELECT b FROM t1)`,
+			wantClause: "SETOP",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ir := parseAssertNoError(t, tt.sql)
+			require.NotEmpty(t, ir.Subqueries, "expected at least one subquery")
+			for _, sq := range ir.Subqueries {
+				assert.Equal(t, tt.wantClause, sq.SourceClause,
+					"subquery %q should record clause %s", sq.Query.RawSQL, tt.wantClause)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 2. Multiple CTEs referencing each other
 // ---------------------------------------------------------------------------

@@ -131,8 +131,9 @@ func findAndRecordUsage(result *ParsedQuery, ctx antlr.RuleContext, role ColumnU
 
 // extractExpressionSubqueries captures direct scalar subqueries in an
 // expression and stores them under result.Subqueries without flattening their
-// nested ColumnUsage into the parent query.
-func extractExpressionSubqueries(result *ParsedQuery, ctx antlr.RuleContext, tokens antlr.TokenStream) {
+// nested ColumnUsage into the parent query. clause is the enclosing clause the
+// expression belongs to (see SubqueryRef.SourceClause).
+func extractExpressionSubqueries(result *ParsedQuery, ctx antlr.RuleContext, clause string, tokens antlr.TokenStream) {
 	if result == nil || ctx == nil {
 		return
 	}
@@ -145,7 +146,7 @@ func extractExpressionSubqueries(result *ParsedQuery, ctx antlr.RuleContext, tok
 	collector := &expressionSubqueryCollector{BasePostgreSQLParserListener: &gen.BasePostgreSQLParserListener{}}
 	antlr.ParseTreeWalkerDefault.Walk(collector, tree)
 	for _, selectWithParens := range collector.subqueries {
-		subRef, err := buildSubqueryRef("", selectWithParens, tokens)
+		subRef, err := buildSubqueryRef("", clause, selectWithParens, tokens)
 		if err != nil || subRef == nil {
 			continue
 		}

@@ -211,7 +211,10 @@ type DDLAction struct {
 // SubqueryRef records metadata for subqueries discovered in FROM or set operations.
 type SubqueryRef struct {
 	Alias string
-	Query *ParsedQuery
+	// SourceClause is the clause the subquery was found in: "WHERE", "HAVING",
+	// "SELECT", "FROM", or "SETOP". Empty when the origin was not recorded.
+	SourceClause string
+	Query        *ParsedQuery
 }
 
 // OrderExpression describes ORDER BY items.
