@@ -19,7 +19,7 @@ func populateDelete(result *ParsedQuery, ctx gen.IDeletestmtContext, tokens antl
 		if withCtx := ctx.With_clause_().With_clause(); withCtx != nil {
 			ctes, cteTables := extractCTEs(withCtx, tokens)
 			result.CTEs = append(result.CTEs, ctes...)
-			result.Tables = append(result.Tables, cteTables...)
+			result.Tables = append(result.Tables, markNested(cteTables)...)
 		}
 	}
 	cteNames := buildCTENameSet(result.CTEs)

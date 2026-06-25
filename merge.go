@@ -67,7 +67,7 @@ func populateMerge(result *ParsedQuery, ctx gen.IMergestmtContext, tokens antlr.
 		if subRef, err := buildSubqueryRef(sourceAlias, "FROM", swp, tokens); err == nil && subRef != nil {
 			merge.Source.Subquery = subRef
 			result.Subqueries = append(result.Subqueries, *subRef)
-			appendSetOpTables(result, nil, subRef.Query.Tables)
+			appendSetOpTables(result, nil, markNested(subRef.Query.Tables))
 		}
 	} else if len(qualifiedNames) > 1 {
 		sourceName := ""

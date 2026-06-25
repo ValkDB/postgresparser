@@ -1115,6 +1115,125 @@ WHERE total > 100`,
 	}
 }
 
+// TestExtractWhereConditionsWithSchema_CTEAndDerived verifies unqualified WHERE
+// columns resolve against CTE and derived-table projections, and are not
+// misattributed to base tables flattened in from inside those bodies (issue #77).
+func TestExtractWhereConditionsWithSchema_CTEAndDerived(t *testing.T) {
+	schemaMap := map[string][]ColumnSchema{
+		"orders": {
+			{Name: "id", IsPrimaryKey: true},
+			{Name: "customer_id"},
+			{Name: "total"},
+		},
+		"customers": {
+			{Name: "id", IsPrimaryKey: true},
+			{Name: "country"},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		query         string
+		expectedTable string
+	}{
+		{
+			// total is projected by the CTE; the base "orders" inside the CTE body
+			// must not steal the attribution.
+			name: "column resolves to CTE, not nested base table",
+			query: `WITH recent_orders AS (SELECT id, customer_id, total FROM orders)
+SELECT * FROM recent_orders r JOIN customers c ON c.id = r.customer_id WHERE total > 100`,
+			expectedTable: "recent_orders",
+		},
+		{
+			name:          "column resolves to derived table projection",
+			query:         `SELECT * FROM (SELECT id, total FROM orders) sub JOIN customers c ON c.id = sub.id WHERE total > 100`,
+			expectedTable: "sub",
+		},
+		{
+			name:          "aliased projection column resolves to the CTE",
+			query:         `WITH t AS (SELECT o.amount AS total FROM orders o) SELECT * FROM t JOIN customers c ON c.id = 1 WHERE total > 1`,
+			expectedTable: "t",
+		},
+		{
+			// total exists in the CTE projection and a directly-joined base table.
+			name:          "collision between CTE and base table stays unresolved",
+			query:         `WITH t AS (SELECT total FROM orders) SELECT * FROM t JOIN orders o ON o.id = 1 WHERE total > 1`,
+			expectedTable: "",
+		},
+		{
+			name:          "SELECT star CTE alone resolves opaquely",
+			query:         `WITH t AS (SELECT * FROM orders) SELECT * FROM t WHERE total > 1`,
+			expectedTable: "t",
+		},
+		{
+			// SELECT * relation is opaque, so a column also present in a base table
+			// is ambiguous.
+			name:          "SELECT star CTE with base table is ambiguous",
+			query:         `WITH t AS (SELECT * FROM orders) SELECT * FROM t JOIN customers c ON c.id = 1 WHERE country = 'US'`,
+			expectedTable: "",
+		},
+		{
+			name:          "CTE column alias list exposes declared name",
+			query:         `WITH t(x) AS (SELECT total FROM orders) SELECT * FROM t JOIN customers c ON c.id = 1 WHERE x > 1`,
+			expectedTable: "t",
+		},
+		{
+			name:          "CTE column alias list hides inner column name",
+			query:         `WITH t(x) AS (SELECT total FROM orders) SELECT * FROM t JOIN customers c ON c.id = 1 WHERE total > 1`,
+			expectedTable: "",
+		},
+		{
+			name:          "derived table column alias list exposes declared name",
+			query:         `SELECT * FROM (SELECT total FROM orders) AS sub(x) JOIN customers c ON c.id = 1 WHERE x > 1`,
+			expectedTable: "sub",
+		},
+		{
+			name:          "derived table column alias list hides inner column name",
+			query:         `SELECT * FROM (SELECT total FROM orders) AS sub(x) JOIN customers c ON c.id = 1 WHERE total > 1`,
+			expectedTable: "",
+		},
+		{
+			// A short alias list renames only the leading column; the rest keep
+			// their projected names, so customer_id remains exposed by t.
+			name:          "short alias list keeps trailing projected columns",
+			query:         `WITH t(x) AS (SELECT total, customer_id FROM orders) SELECT * FROM t JOIN customers c ON c.id = 1 WHERE customer_id = 1`,
+			expectedTable: "t",
+		},
+		{
+			// total::numeric is still exposed as total.
+			name:          "casted projection column keeps its name",
+			query:         `WITH t AS (SELECT total::numeric, id FROM orders) SELECT * FROM t JOIN customers c ON c.id = 1 WHERE total > 1`,
+			expectedTable: "t",
+		},
+		{
+			name:          "data-modifying CTE exposes RETURNING columns",
+			query:         `WITH t AS (UPDATE orders SET total = total + 1 RETURNING id, total) SELECT * FROM t JOIN customers c ON c.id = 1 WHERE total > 1`,
+			expectedTable: "t",
+		},
+		{
+			name:          "RETURNING implicit alias is exposed",
+			query:         `WITH t AS (UPDATE orders SET total = total + 1 RETURNING total new_total) SELECT * FROM t JOIN customers c ON c.id = 1 WHERE new_total > 1`,
+			expectedTable: "t",
+		},
+		{
+			// A subquery body re-reading a directly-joined table must not disturb
+			// resolution: the direct base relation still owns the column.
+			name:          "direct table resolves despite same table inside a subquery",
+			query:         `SELECT * FROM orders, (SELECT id FROM orders) sub JOIN customers c ON c.id = 1 WHERE total > 1`,
+			expectedTable: "orders",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conditions, err := ExtractWhereConditionsWithSchema(tt.query, schemaMap)
+			require.NoError(t, err)
+			require.Len(t, conditions, 1)
+			assert.Equal(t, tt.expectedTable, conditions[0].Table)
+		})
+	}
+}
+
 // TestExtractWhereConditionsWithSchema_NilSchema verifies a nil schemaMap
 // behaves exactly like ExtractWhereConditions.
 func TestExtractWhereConditionsWithSchema_NilSchema(t *testing.T) {
@@ -1128,6 +1247,18 @@ func TestExtractWhereConditionsWithSchema_NilSchema(t *testing.T) {
 	assert.Equal(t, plain, withSchema)
 	require.Len(t, withSchema, 1)
 	assert.Empty(t, withSchema[0].Table)
+}
+
+// TestExtractWhereConditionsWithSchema_EmptyMapResolvesProjections verifies an
+// empty (non-nil) schema map still resolves CTE/derived relations, which do not
+// need base-table schema metadata.
+func TestExtractWhereConditionsWithSchema_EmptyMapResolvesProjections(t *testing.T) {
+	query := `WITH t AS (SELECT x FROM src) SELECT * FROM t JOIN other o ON o.id = 1 WHERE x = 1`
+
+	conditions, err := ExtractWhereConditionsWithSchema(query, map[string][]ColumnSchema{})
+	require.NoError(t, err)
+	require.Len(t, conditions, 1)
+	assert.Equal(t, "t", conditions[0].Table)
 }
 
 // TestBuildWhereAliasMap verifies WHERE alias-map resolution behavior.

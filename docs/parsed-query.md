@@ -50,7 +50,7 @@ It is not designed for:
 
 ## Relation Metadata
 
-- `Tables`: Structured relation refs (`Schema`, `Name`, `Alias`, `Type`, `Raw`).
+- `Tables`: Structured relation refs (`Schema`, `Name`, `Alias`, `Type`, `Raw`). `Nested` is true for relations surfaced from inside a CTE or subquery body rather than the query's own FROM.
 - `CTEs`: `WITH` definitions.
   - `Name`: CTE binding name.
   - `Query`: raw SQL text of the CTE body.

@@ -41,6 +41,54 @@ WHERE active_users.id = $2`
 	assert.True(t, foundFilter, "expected CTE parsed query to retain filter column usage")
 }
 
+// TestIR_NestedTableMarking verifies tables surfaced from CTE and subquery
+// bodies are marked Nested, while the query's own FROM relations are not.
+func TestIR_NestedTableMarking(t *testing.T) {
+	nestedOf := func(ir *ParsedQuery, name string) (bool, bool) {
+		for _, tbl := range ir.Tables {
+			if tbl.Name == name {
+				return tbl.Nested, true
+			}
+		}
+		return false, false
+	}
+
+	t.Run("CTE body table is nested, FROM relations are not", func(t *testing.T) {
+		ir := parseAssertNoError(t, `WITH ro AS (SELECT id FROM orders) SELECT * FROM ro JOIN customers c ON c.id = ro.id`)
+
+		nested, ok := nestedOf(ir, "orders")
+		require.True(t, ok, "expected nested base table 'orders'")
+		assert.True(t, nested, "CTE body table 'orders' should be nested")
+
+		nested, ok = nestedOf(ir, "ro")
+		require.True(t, ok, "expected CTE relation 'ro'")
+		assert.False(t, nested, "CTE reference 'ro' is a direct FROM relation")
+
+		nested, ok = nestedOf(ir, "customers")
+		require.True(t, ok, "expected base table 'customers'")
+		assert.False(t, nested, "joined base table 'customers' is a direct FROM relation")
+	})
+
+	t.Run("derived table body is nested, derived relation is not", func(t *testing.T) {
+		ir := parseAssertNoError(t, `SELECT * FROM (SELECT id FROM orders) sub WHERE sub.id > 1`)
+
+		nested, ok := nestedOf(ir, "orders")
+		require.True(t, ok, "expected nested base table 'orders'")
+		assert.True(t, nested, "derived-table body 'orders' should be nested")
+
+		nested, ok = nestedOf(ir, "sub")
+		require.True(t, ok, "expected derived relation 'sub'")
+		assert.False(t, nested, "derived relation 'sub' is a direct FROM relation")
+	})
+
+	t.Run("plain FROM tables are not nested", func(t *testing.T) {
+		ir := parseAssertNoError(t, `SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id`)
+		for _, tbl := range ir.Tables {
+			assert.False(t, tbl.Nested, "plain FROM table %q should not be nested", tbl.Name)
+		}
+	})
+}
+
 func TestIR_CTEParsedQuery_Update(t *testing.T) {
 	sql := `WITH updated_users AS (
     UPDATE users SET active = true WHERE id = $1 RETURNING id

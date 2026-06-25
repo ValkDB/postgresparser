@@ -36,9 +36,8 @@ func populateSelectFromResolved(result *ParsedQuery, withClause gen.IWith_clause
 		if len(ctes) > 0 {
 			result.CTEs = append(result.CTEs, ctes...)
 		}
-		// Add tables found within CTEs to the result
 		if len(cteTables) > 0 {
-			result.Tables = append(result.Tables, cteTables...)
+			result.Tables = append(result.Tables, markNested(cteTables)...)
 		}
 	}
 	for _, cte := range result.CTEs {
@@ -170,11 +169,16 @@ func extractCTEs(withCtx gen.IWith_clauseContext, tokens antlr.TokenStream) ([]C
 		if name == "" {
 			name = fmt.Sprintf("cte_%d", len(ctes)+1)
 		}
+		var columnAliases []string
+		if nl := cteCtx.Name_list_(); nl != nil {
+			columnAliases = nameListStrings(nl.Name_list(), tokens)
+		}
 		ctes = append(ctes, CTE{
-			Name:         name,
-			Query:        query,
-			ParsedQuery:  parsedQuery,
-			Materialized: materialized,
+			Name:          name,
+			Query:         query,
+			ParsedQuery:   parsedQuery,
+			Materialized:  materialized,
+			ColumnAliases: columnAliases,
 		})
 	}
 
@@ -341,8 +345,11 @@ func collectTableRefs(result *ParsedQuery, ref gen.ITable_refContext, tokens ant
 		// Build nested subquery analysis without flattening inner column usage
 		// into the parent query scope.
 		if subRef, err := buildSubqueryRef(alias, "FROM", sub, tokens); err == nil && subRef != nil {
+			if ac := ref.Alias_clause(); ac != nil {
+				subRef.ColumnAliases = nameListStrings(ac.Name_list(), tokens)
+			}
 			result.Subqueries = append(result.Subqueries, *subRef)
-			appendSetOpTables(result, nil, subRef.Query.Tables)
+			appendSetOpTables(result, nil, markNested(subRef.Query.Tables))
 		}
 	}
 

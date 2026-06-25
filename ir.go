@@ -61,6 +61,9 @@ type TableRef struct {
 	Raw           string
 	JoinType      string // "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "NATURAL", or "" for base FROM tables.
 	JoinCondition string // Raw ON/USING clause text, or "" for base/CROSS tables.
+	// Nested is true for relations surfaced from inside a CTE or subquery body,
+	// rather than this query's own FROM clause.
+	Nested bool
 }
 
 // SelectColumn captures the projection list of a SELECT query.
@@ -214,7 +217,10 @@ type SubqueryRef struct {
 	// SourceClause is the clause the subquery was found in: "WHERE", "HAVING",
 	// "SELECT", "FROM", or "SETOP". Empty when the origin was not recorded.
 	SourceClause string
-	Query        *ParsedQuery
+	// ColumnAliases holds the explicit output column names from a derived table
+	// alias list (SELECT ...) sub(a, b); empty when not declared.
+	ColumnAliases []string
+	Query         *ParsedQuery
 }
 
 // OrderExpression describes ORDER BY items.
@@ -355,6 +361,9 @@ type CTE struct {
 	Query        string
 	ParsedQuery  *ParsedQuery
 	Materialized string // "", "MATERIALIZED", or "NOT MATERIALIZED"
+	// ColumnAliases holds the explicit output column names from WITH name(a, b);
+	// empty when not declared (the projection in ParsedQuery applies).
+	ColumnAliases []string
 }
 
 // ColumnUsageType defines the context where a column is referenced.

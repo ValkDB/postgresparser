@@ -297,7 +297,7 @@ func extractTablesAndUsageForPrimary(primary gen.ISimple_select_pramaryContext, 
 		// into the parent query scope.
 		if subRef, err := buildSubqueryRef("", "SETOP", primary.Select_with_parens(), tokens); err == nil && subRef != nil {
 			tmp.Subqueries = append(tmp.Subqueries, *subRef)
-			tmp.Tables = append(tmp.Tables, subRef.Query.Tables...)
+			tmp.Tables = append(tmp.Tables, markNested(subRef.Query.Tables)...)
 		}
 	}
 	return tmp.Tables, tmp.Subqueries
