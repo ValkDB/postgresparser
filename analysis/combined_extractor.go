@@ -61,9 +61,7 @@ func ExtractQueryAnalysis(query string) (*QueryAnalysisResult, error) {
 // by looking it up across the query's base tables in schemaMap. Returns the table
 // name when exactly one base table contains the column, "" otherwise.
 func resolveColumnTableFromSchema(column string, pq *postgresparser.ParsedQuery, schemaMap map[string][]ColumnSchema) string {
-	// A nil schemaMap opts out of resolution (the ExtractWhereConditions path).
-	// An empty but non-nil map still resolves CTE/derived relations, which do
-	// not need base-table schema metadata.
+	// nil opts out of resolution; an empty map still resolves CTE/derived relations.
 	if schemaMap == nil {
 		return ""
 	}
@@ -75,8 +73,6 @@ func resolveColumnTableFromSchema(column string, pq *postgresparser.ParsedQuery,
 	match := ""
 	matched := false
 	for _, table := range pq.Tables {
-		// Only the query's own FROM relations are candidates, not tables
-		// surfaced from inside a CTE or subquery body.
 		if table.Nested {
 			continue
 		}
@@ -85,8 +81,7 @@ func resolveColumnTableFromSchema(column string, pq *postgresparser.ParsedQuery,
 			continue
 		}
 		if matched && name != match {
-			// The column exists in more than one distinct direct relation.
-			// Repeats of the same relation (self-joins) resolve to the shared name.
+			// Distinct relations only; self-joins resolve to the shared name.
 			return ""
 		}
 		match = name
