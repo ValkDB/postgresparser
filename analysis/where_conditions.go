@@ -67,9 +67,10 @@ func ExtractWhereConditions(query string) ([]WhereCondition, error) {
 }
 
 // ExtractWhereConditionsWithSchema is like ExtractWhereConditions, but resolves
-// the table of unqualified columns in multi-table queries via schema metadata:
-// if exactly one of the query's base tables contains the column, that table is
-// used; zero or multiple matches leave Table empty.
+// the table of unqualified columns in multi-table queries. A column is matched
+// against the query's direct FROM relations: base tables via schemaMap, and CTEs
+// or derived tables via their own projection. If exactly one relation exposes
+// the column, that relation is used; zero or multiple matches leave Table empty.
 // The schemaMap is keyed by lowercase table name (same shape as
 // ExtractJoinRelationshipsWithSchema). A nil schemaMap behaves exactly like
 // ExtractWhereConditions.

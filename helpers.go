@@ -239,6 +239,35 @@ func tableRefAliasOrName(tr TableRef) string {
 	return strings.TrimSpace(tr.Raw)
 }
 
+// nameListStrings returns the trimmed identifiers of a name_list (e.g. the
+// column alias list in WITH t(a, b) or (SELECT ...) sub(a, b)).
+func nameListStrings(nl gen.IName_listContext, tokens antlr.TokenStream) []string {
+	if nl == nil {
+		return nil
+	}
+	names := nl.AllName()
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		if name := strings.TrimSpace(text(tokens, n)); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// markNested returns a copy of tables with Nested set to true.
+func markNested(tables []TableRef) []TableRef {
+	if len(tables) == 0 {
+		return tables
+	}
+	out := make([]TableRef, len(tables))
+	for i, t := range tables {
+		t.Nested = true
+		out[i] = t
+	}
+	return out
+}
+
 // recordUsingJoinFromString parses a textual USING clause and records join usages for the two most recent base tables.
 func recordUsingJoinFromString(result *ParsedQuery, clause string) {
 	if result == nil {

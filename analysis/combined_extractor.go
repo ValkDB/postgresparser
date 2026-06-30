@@ -60,8 +60,9 @@ func ExtractQueryAnalysis(query string) (*QueryAnalysisResult, error) {
 // resolveColumnTableFromSchema resolves an unqualified column to its owning table
 // by looking it up across the query's base tables in schemaMap. Returns the table
 // name when exactly one base table contains the column, "" otherwise.
-func resolveColumnTableFromSchema(column string, tables []postgresparser.TableRef, schemaMap map[string][]ColumnSchema) string {
-	if len(schemaMap) == 0 {
+func resolveColumnTableFromSchema(column string, pq *postgresparser.ParsedQuery, schemaMap map[string][]ColumnSchema) string {
+	// nil opts out of resolution; an empty map still resolves CTE/derived relations.
+	if schemaMap == nil {
 		return ""
 	}
 	col := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(column)))
@@ -70,27 +71,180 @@ func resolveColumnTableFromSchema(column string, tables []postgresparser.TableRe
 	}
 
 	match := ""
-	for _, table := range tables {
-		if table.Type != postgresparser.TableTypeBase {
+	matched := false
+	for _, table := range pq.Tables {
+		if table.Nested {
 			continue
 		}
-		tableName := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(table.Name)))
-		if tableName == "" || tableName == match {
+		name, contains := relationHasColumn(table, col, pq, schemaMap)
+		if name == "" || !contains {
 			continue
 		}
-		for _, cs := range schemaMap[tableName] {
-			if strings.ToLower(cs.Name) != col {
-				continue
-			}
-			if match != "" {
-				// Ambiguous: the column exists in more than one of the query's tables.
-				return ""
-			}
-			match = tableName
-			break
+		if matched && name != match {
+			// Distinct relations only; self-joins resolve to the shared name.
+			return ""
 		}
+		match = name
+		matched = true
 	}
 	return match
+}
+
+// relationHasColumn reports whether a direct FROM relation exposes col, and
+// returns the relation's resolved name. Base tables are checked against
+// schemaMap; CTEs and derived tables against their own projection. A relation
+// projecting "*" cannot be enumerated and is treated as a possible owner.
+func relationHasColumn(table postgresparser.TableRef, col string, pq *postgresparser.ParsedQuery, schemaMap map[string][]ColumnSchema) (string, bool) {
+	switch table.Type {
+	case postgresparser.TableTypeBase:
+		name := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(table.Name)))
+		if name == "" {
+			return "", false
+		}
+		for _, cs := range schemaMap[name] {
+			if strings.ToLower(cs.Name) == col {
+				return name, true
+			}
+		}
+		return name, false
+	case postgresparser.TableTypeCTE:
+		name := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(table.Name)))
+		cols, star := cteProjection(pq, name)
+		return name, star || cols[col]
+	case postgresparser.TableTypeSubquery:
+		alias := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(table.Name)))
+		cols, star := subqueryProjection(pq, alias)
+		return alias, star || cols[col]
+	default:
+		return "", false
+	}
+}
+
+// cteProjection returns the lowercased output column names of the named CTE and
+// whether they cannot be fully enumerated (a "*" projection).
+func cteProjection(pq *postgresparser.ParsedQuery, name string) (map[string]bool, bool) {
+	for _, cte := range pq.CTEs {
+		if strings.ToLower(ident.TrimQuotes(strings.TrimSpace(cte.Name))) != name {
+			continue
+		}
+		var projection []postgresparser.SelectColumn
+		if cte.ParsedQuery != nil {
+			projection = projectionOrReturning(cte.ParsedQuery)
+		}
+		return exposedColumns(projection, cte.ColumnAliases)
+	}
+	return nil, false
+}
+
+// subqueryProjection returns the lowercased output column names of the FROM
+// subquery with the given alias and whether they cannot be fully enumerated.
+func subqueryProjection(pq *postgresparser.ParsedQuery, alias string) (map[string]bool, bool) {
+	for _, sub := range pq.Subqueries {
+		if sub.SourceClause != "FROM" {
+			continue
+		}
+		if strings.ToLower(ident.TrimQuotes(strings.TrimSpace(sub.Alias))) != alias {
+			continue
+		}
+		var projection []postgresparser.SelectColumn
+		if sub.Query != nil {
+			projection = sub.Query.Columns
+		}
+		return exposedColumns(projection, sub.ColumnAliases)
+	}
+	return nil, false
+}
+
+// exposedColumns returns the lowercased output column names a relation exposes,
+// and whether they cannot be fully enumerated. A column alias list renames the
+// leading projected columns positionally; columns beyond the list keep their
+// own names. A "*" projection expands to an unknown set, so the relation is
+// opaque (treated as a possible owner of any column).
+func exposedColumns(projection []postgresparser.SelectColumn, aliasList []string) (map[string]bool, bool) {
+	if len(projection) == 0 {
+		// No enumerable projection (e.g. unparsed body); fall back to any
+		// declared alias list.
+		return lowerSet(aliasList), false
+	}
+
+	names := make(map[string]bool, len(projection))
+	for i, c := range projection {
+		expr := strings.TrimSpace(c.Expression)
+		if expr == "*" || strings.HasSuffix(expr, ".*") {
+			return names, true
+		}
+		name := ""
+		switch {
+		case i < len(aliasList):
+			name = aliasList[i]
+		case c.Alias != "":
+			name = c.Alias
+		default:
+			name = simpleColumnName(expr)
+		}
+		if name = strings.ToLower(ident.TrimQuotes(strings.TrimSpace(name))); name != "" {
+			names[name] = true
+		}
+	}
+	return names, false
+}
+
+// lowerSet builds a lowercased, unquoted lookup set from identifiers.
+func lowerSet(values []string) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, v := range values {
+		if key := strings.ToLower(ident.TrimQuotes(strings.TrimSpace(v))); key != "" {
+			out[key] = true
+		}
+	}
+	return out
+}
+
+// projectionOrReturning returns the columns a relation exposes: the SELECT
+// projection, or the RETURNING list for a data-modifying CTE body.
+func projectionOrReturning(pq *postgresparser.ParsedQuery) []postgresparser.SelectColumn {
+	if len(pq.Columns) > 0 || len(pq.Returning) == 0 {
+		return pq.Columns
+	}
+	items := normalizeReturning(pq.Returning)
+	cols := make([]postgresparser.SelectColumn, 0, len(items))
+	for _, item := range items {
+		expr, alias := splitAsAlias(item)
+		cols = append(cols, postgresparser.SelectColumn{Expression: expr, Alias: alias})
+	}
+	return cols
+}
+
+// splitAsAlias splits a projection item into expression and output alias,
+// handling both "expr AS alias" and the implicit "expr alias" form. The
+// implicit form is only honored when the item is exactly two bare identifiers,
+// to avoid misreading expressions like "total + 1".
+func splitAsAlias(item string) (expr, alias string) {
+	item = strings.TrimSpace(item)
+	if idx := strings.LastIndex(strings.ToLower(item), " as "); idx >= 0 {
+		return strings.TrimSpace(item[:idx]), strings.TrimSpace(item[idx+4:])
+	}
+	if fields := strings.Fields(item); len(fields) == 2 && simpleColumnName(fields[0]) != "" && simpleColumnName(fields[1]) != "" {
+		return fields[0], fields[1]
+	}
+	return item, ""
+}
+
+// simpleColumnName returns the lowercased final identifier of a simple column
+// reference (e.g. "o.amount" -> "amount", "total" -> "total"). It returns ""
+// for computed expressions (functions, arithmetic, casts) whose output column
+// name cannot be derived from the text.
+func simpleColumnName(expr string) string {
+	// A trailing ::type cast keeps the underlying column's name (total::numeric
+	// is exposed as total), so drop the cast before inspecting the reference.
+	if i := strings.Index(expr, "::"); i >= 0 {
+		expr = strings.TrimSpace(expr[:i])
+	}
+	if expr == "" || strings.ContainsAny(expr, "()[] +-*/:") {
+		return ""
+	}
+	parts := strings.Split(expr, ".")
+	return strings.ToLower(ident.TrimQuotes(strings.TrimSpace(parts[len(parts)-1])))
 }
 
 // extractWhereConditionsFromParsed extracts WHERE conditions from an already-parsed query.
@@ -126,7 +280,7 @@ func extractWhereConditionsFromParsed(pq *postgresparser.ParsedQuery, schemaMap 
 				// No alias and no resolution - default to first table only for single-table queries
 				tableName = pq.Tables[0].Name
 			} else {
-				tableName = resolveColumnTableFromSchema(usage.Column, pq.Tables, schemaMap)
+				tableName = resolveColumnTableFromSchema(usage.Column, pq, schemaMap)
 			}
 		}
 
