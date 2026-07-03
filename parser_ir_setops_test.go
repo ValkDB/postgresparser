@@ -109,20 +109,23 @@ SELECT user_id FROM revoked_permissions`,
 	}
 }
 
-// TestIR_SetOpRHSWhereColumnUsage checks right-hand set-operation branches
-// record their WHERE filters exactly once; INTERSECT used to drop them.
-func TestIR_SetOpRHSWhereColumnUsage(t *testing.T) {
+// TestIR_SetOpWhereColumnUsage checks each set-operation branch records its
+// WHERE filter exactly once; the leading branch used to be recorded twice and
+// INTERSECT right-hand branches not at all.
+func TestIR_SetOpWhereColumnUsage(t *testing.T) {
 	for _, op := range []string{"UNION", "INTERSECT", "EXCEPT"} {
 		t.Run(op, func(t *testing.T) {
 			ir := parseAssertNoError(t, "SELECT a FROM t1 WHERE x = 1 "+op+" SELECT a FROM t2 WHERE y = 2")
 
-			count := 0
-			for _, usage := range ir.ColumnUsage {
-				if usage.UsageType == ColumnUsageTypeFilter && strings.EqualFold(usage.Column, "y") {
-					count++
+			for _, col := range []string{"x", "y"} {
+				count := 0
+				for _, usage := range ir.ColumnUsage {
+					if usage.UsageType == ColumnUsageTypeFilter && strings.EqualFold(usage.Column, col) {
+						count++
+					}
 				}
+				assert.Equal(t, 1, count, "expected filter column %s recorded exactly once", col)
 			}
-			assert.Equal(t, 1, count, "expected RHS filter column y recorded exactly once")
 		})
 	}
 }
