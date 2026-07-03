@@ -65,8 +65,7 @@ func extractSetOperationsWithResult(selectNoParens gen.ISelect_no_parensContext,
 		// Otherwise it was already processed by extractWhereClause in the main SELECT
 		if hasSetOps {
 			if primary := first.Simple_select_pramary(0); primary != nil {
-				// Pass result through to capture column usage from first SELECT
-				firstTables, firstSubs := extractTablesAndUsageForPrimary(primary, tokens, cteNames, result)
+				firstTables, firstSubs := extractTablesAndUsageForPrimary(primary, tokens, cteNames, nil)
 				leading = append(leading, firstTables...)
 				subqueries = append(subqueries, firstSubs...)
 			}
