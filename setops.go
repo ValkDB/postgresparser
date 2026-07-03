@@ -173,7 +173,7 @@ func collectIntersectOperationsWithResult(node gen.ISimple_select_intersectConte
 			continue
 		}
 
-		op, opSubs := buildSetOperationFromPrimary(opType, primary, tokens, cteNames)
+		op, opSubs := buildSetOperationFromPrimary(opType, primary, tokens, cteNames, result)
 		ops = append(ops, op)
 		subqueries = append(subqueries, opSubs...)
 		nestedOps, nestedLeading, nestedSubs := collectNestedSetOperationsFromPrimary(primary, tokens, cteNames)
@@ -206,8 +206,9 @@ func buildSetOperationFromIntersect(opType string, rhs gen.ISimple_select_inters
 }
 
 // buildSetOperationFromPrimary materialises metadata for an INTERSECT primary SELECT.
-func buildSetOperationFromPrimary(opType string, primary gen.ISimple_select_pramaryContext, tokens antlr.TokenStream, cteNames map[string]struct{}) (SetOperation, []SubqueryRef) {
-	tables, subqueries := extractTablesForPrimary(primary, tokens, cteNames)
+func buildSetOperationFromPrimary(opType string, primary gen.ISimple_select_pramaryContext, tokens antlr.TokenStream, cteNames map[string]struct{}, result *ParsedQuery) (SetOperation, []SubqueryRef) {
+	// Pass result through to capture column usage
+	tables, subqueries := extractTablesAndUsageForPrimary(primary, tokens, cteNames, result)
 	query := ""
 	query = text(tokens, primary)
 	return SetOperation{
@@ -249,11 +250,6 @@ func collectNestedSetOperationsFromPrimary(primary gen.ISimple_select_pramaryCon
 		return nil, nil, nil
 	}
 	return extractSetOperationsWithResult(inner, tokens, cteNames, nil)
-}
-
-// extractTablesForPrimary recovers table references and nested subqueries from a select primary.
-func extractTablesForPrimary(primary gen.ISimple_select_pramaryContext, tokens antlr.TokenStream, cteNames map[string]struct{}) ([]TableRef, []SubqueryRef) {
-	return extractTablesAndUsageForPrimary(primary, tokens, cteNames, nil)
 }
 
 // extractTablesAndUsageForPrimary recovers table references, subqueries, and column usage from a select primary.

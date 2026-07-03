@@ -109,6 +109,24 @@ SELECT user_id FROM revoked_permissions`,
 	}
 }
 
+// TestIR_SetOpRHSWhereColumnUsage checks right-hand set-operation branches
+// record their WHERE filters exactly once; INTERSECT used to drop them.
+func TestIR_SetOpRHSWhereColumnUsage(t *testing.T) {
+	for _, op := range []string{"UNION", "INTERSECT", "EXCEPT"} {
+		t.Run(op, func(t *testing.T) {
+			ir := parseAssertNoError(t, "SELECT a FROM t1 WHERE x = 1 "+op+" SELECT a FROM t2 WHERE y = 2")
+
+			count := 0
+			for _, usage := range ir.ColumnUsage {
+				if usage.UsageType == ColumnUsageTypeFilter && strings.EqualFold(usage.Column, "y") {
+					count++
+				}
+			}
+			assert.Equal(t, 1, count, "expected RHS filter column y recorded exactly once")
+		})
+	}
+}
+
 // TestIR_SetOpBranchLimitIsNested guards the isNested flag propagation through
 // the consolidated populateSelectFromResolved entry-point: a LIMIT on the
 // top-level select must report IsNested=false, while a LIMIT inside a
