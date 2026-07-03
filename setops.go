@@ -11,6 +11,7 @@ import (
 )
 
 // extractSetOperationsWithResult traverses UNION/INTERSECT/EXCEPT chains with optional result for column usage recording.
+// A leading primary with its own FROM clause is skipped: the main SELECT flow already extracts it fully.
 func extractSetOperationsWithResult(selectNoParens gen.ISelect_no_parensContext, tokens antlr.TokenStream, cteNames map[string]struct{}, result *ParsedQuery) ([]SetOperation, []TableRef, []SubqueryRef) {
 	if selectNoParens == nil {
 		return nil, nil, nil
@@ -61,10 +62,8 @@ func extractSetOperationsWithResult(selectNoParens gen.ISelect_no_parensContext,
 	}
 
 	if first := clauseCtx.Simple_select_intersect(0); first != nil {
-		// Only process the first primary if there are actual set operations
-		// Otherwise it was already processed by extractWhereClause in the main SELECT
 		if hasSetOps {
-			if primary := first.Simple_select_pramary(0); primary != nil {
+			if primary := first.Simple_select_pramary(0); primary != nil && primary.From_clause() == nil {
 				firstTables, firstSubs := extractTablesAndUsageForPrimary(primary, tokens, cteNames, nil)
 				leading = append(leading, firstTables...)
 				subqueries = append(subqueries, firstSubs...)
