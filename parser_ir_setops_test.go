@@ -130,6 +130,22 @@ func TestIR_SetOpWhereColumnUsage(t *testing.T) {
 	}
 }
 
+// TestIR_SetOpLeadingFromSubqueryOnce checks a FROM subquery in the leading
+// set-op branch appears once in Subqueries; it used to be recorded twice.
+func TestIR_SetOpLeadingFromSubqueryOnce(t *testing.T) {
+	ir := parseAssertNoError(t, "SELECT a FROM (SELECT a FROM inner_t) s WHERE x = 1 UNION SELECT a FROM t2 WHERE y = 2")
+
+	count := 0
+	for _, sq := range ir.Subqueries {
+		if sq.SourceClause == "FROM" && sq.Alias == "s" {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "expected leading FROM subquery recorded exactly once")
+	assert.True(t, containsTable(ir.Tables, "inner_t"), "expected inner_t surfaced in top-level tables")
+	assert.True(t, containsTable(ir.Tables, "t2"), "expected t2 surfaced in top-level tables")
+}
+
 // TestIR_SetOpBranchLimitIsNested guards the isNested flag propagation through
 // the consolidated populateSelectFromResolved entry-point: a LIMIT on the
 // top-level select must report IsNested=false, while a LIMIT inside a
